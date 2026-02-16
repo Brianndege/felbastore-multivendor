@@ -1,0 +1,33 @@
+import { Card, CardContent } from "@/components/ui/card";
+import Link from "next/link";
+
+export default function NewArrivalsPage() {
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold text-[#e16b22] mb-4">New Arrivals</h1>
+      <p className="mb-8 text-gray-600">Discover the freshest products recently added to Felbastore!</p>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {[1,2,3].map((id) => (
+          <Card key={id} className="overflow-hidden">
+            <div className="aspect-video w-full bg-white">
+              <img
+                src={`https://source.unsplash.com/random/400x250?sig=${id+300}&product,new`}
+                alt="Product"
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <CardContent className="p-4">
+              <h3 className="font-semibold mb-1">Brand New Product {id}</h3>
+              <p className="text-xs text-gray-500 mb-2">Just Arrived</p>
+              <span className="text-lg text-[#e16b22] font-bold">$59.00</span>
+            </CardContent>
+            <div className="p-4 pt-0 flex gap-2">
+              <Link href="#" className="text-xs text-[#e16b22] underline">View Details</Link>
+              <span className="ml-auto text-xs text-gray-500">★5.0</span>
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
