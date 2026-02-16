@@ -4,6 +4,10 @@ A robust multivendor e-commerce platform with advanced payment integration, buil
 
 ![Felbastore](https://images.unsplash.com/photo-1472851294608-062f824d29cc?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)
 
+## Repository
+
+GitHub Repository: [https://github.com/Brianndege/felbastore-multivendor](https://github.com/Brianndege/felbastore-multivendor)
+
 ## Features
 
 - **Multivendor Architecture** - Multiple vendors can register and sell products
