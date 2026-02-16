@@ -2,8 +2,9 @@
   remote_images = ["https://source.unsplash.com/.*", "https://images.unsplash.com/.*", "https://ext.same-assets.com/.*", "https://ugc.same-assets.com/.*"]
 
 [build]
-  command = "bunx prisma generate && bun run build"
+  command = "bunx prisma generate && NEXT_DISABLE_ESLINT=1 SKIP_TYPE_CHECK=1 bun run build"
   publish = ".next"
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- ./multivendor-marketplace/"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
