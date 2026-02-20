@@ -1,229 +1,83 @@
-// Prisma schema for FelbaStore Multi-Vendor Marketplace
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
-generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
-}
-
-model Account {
-  id                String  @id @default(cuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String? @db.Text
-  access_token      String? @db.Text
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String? @db.Text
-  session_state     String?
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
-}
-
-model Session {
-  id           Int   @id @default(autoincrement())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
-
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  password      String?
-  role          String    @default("user") // user, admin
-  emailVerified DateTime?
-  image         String?
-  phone         String?
-  address       String?
-  city          String?
-  country       String?
-  zipCode       String?
-  dateOfBirth   DateTime?
-  gender        String?
-  preferences   String?   @db.Text // JSON preferences
-  lastLoginAt   DateTime?
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  accounts Account[]
-  sessions Session[]
-  resetTokens PasswordResetToken[]
-  verificationTokens EmailVerificationToken[]
-  cartItems CartItem[]
-  orders Order[]
-  reviews Review[]
-  wishlistItems WishlistItem[]
-  addresses SavedAddress[]
-  notifications Notification[]
-  analytics UserAnalytics[]
-}
-
-model Vendor {
-  id         String   @id @default(cuid())
-  name       String
-  email      String   @unique
-  password   String?
-  storeName  String
-  role       String   @default("vendor")
-  emailVerified DateTime?
-  image      String?
-  phone      String?
-  address    String?
-  city       String?
-  country    String?
-  zipCode    String?
-  description String? @db.Text
-  businessType String?
-  taxId      String?
-  website    String?
-  isVerified Boolean  @default(false)
-  isActive   Boolean  @default(true)
-  commissionRate Decimal @default(10.0) @db.Decimal(5, 2)
-  lastLoginAt DateTime?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  resetTokens PasswordResetToken[]
-  verificationTokens EmailVerificationToken[]
-  products Product[]
-  orderItems OrderItem[]
-  notifications Notification[]
-  analytics VendorAnalytics[]
-  inventoryAlerts InventoryAlert[]
-}
-
-model Product {
-  id            String   @id @default(cuid())
-  vendorId      String
-  name          String
-  description   String   @db.Text
-  price         Decimal  @db.Decimal(10, 2)
-  comparePrice  Decimal? @db.Decimal(10, 2)
-  currency      String   @default("USD")
-  category      String
-  subcategory   String?
-  tags          String[]
-  images        String[]
-  inventory     Int      @default(0)
-  lowStockThreshold Int  @default(10)
-  sku           String?  @unique
-  weight        Decimal? @db.Decimal(8, 2)
-  dimensions    String?  // JSON {length, width, height}
-  status        String   @default("active") // active, inactive, draft, under_review
-  featured      Boolean  @default(false)
-  isApproved    Boolean  @default(false)
-  viewCount     Int      @default(0)
-  soldCount     Int      @default(0)
-  avgRating     Decimal? @db.Decimal(3, 2)
-  reviewCount   Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  vendor        Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  cartItems     CartItem[]
-  orderItems    OrderItem[]
-  reviews       Review[]
-  wishlistItems WishlistItem[]
-  inventoryAlerts InventoryAlert[]
-
-  @@index([vendorId])
-  @@index([category])
-  @@index([status])
-  @@index([featured])
-  @@index([avgRating])
-  @@index([soldCount])
-}
-
-model CartItem {
+model PasswordResetToken {
   id        String   @id @default(cuid())
+  token     String
+  user      User     @relation(fields: [userId], references: [id])
   userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  token     String
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model WishlistItem {
+  id        String  @id @default(cuid())
+  user      User    @relation(fields: [userId], references: [id])
+  userId    String
+  product   Product @relation(fields: [productId], references: [id])
   productId String
-  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  @@unique([userId, productId])
+}
+
+model SavedAddress {
+  id       String @id @default(cuid())
+  user     User   @relation(fields: [userId], references: [id])
+  userId   String
+  label    String
+  address  String @db.Text
+  city     String
+  country  String
+  zipCode  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, productId])
-  @@index([userId])
 }
 
-model Order {
-  id              String   @id @default(cuid())
-  orderNumber     String   @unique
-  userId          String
-  status          String   @default("pending") // pending, confirmed, shipped, delivered, cancelled
-  totalAmount     Decimal  @db.Decimal(10, 2)
-  shippingAmount  Decimal  @db.Decimal(10, 2) @default(0)
-  taxAmount       Decimal  @db.Decimal(10, 2) @default(0)
-  discountAmount  Decimal  @db.Decimal(10, 2) @default(0)
-  paymentStatus   String   @default("pending") // pending, paid, failed, refunded
-  paymentMethod   String?
-  paymentIntentId String?  @unique
-  shippingAddress String   @db.Text
-  billingAddress  String   @db.Text
-  notes           String?  @db.Text
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  user       User        @relation(fields: [userId], references: [id])
-  orderItems OrderItem[]
-
-  @@index([userId])
-  @@index([status])
-  @@index([orderNumber])
-}
-
-model OrderItem {
-  id          String  @id @default(cuid())
-  orderId     String
-  productId   String
-  vendorId    String
-  quantity    Int
-  price       Decimal @db.Decimal(10, 2)
-  productName String
-  productImage String?
-
-  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id])
-  vendor  Vendor  @relation(fields: [vendorId], references: [id])
-
-  @@index([orderId])
-  @@index([vendorId])
-}
-
-model Review {
-  id        String   @id @default(cuid())
-  userId    String
-  productId String
-  rating    Int      // 1-5 stars
-  comment   String?  @db.Text
-  images    String[]
-  isVerified Boolean @default(false)
-  helpfulCount Int   @default(0)
+model Notification {
+  id        String @id @default(cuid())
+  user      User?  @relation(fields: [userId], references: [id])
+  userId    String?
+  vendor    Vendor? @relation(fields: [vendorId], references: [id])
+  vendorId  String?
+  title     String
+  message   String @db.Text
+  isRead    Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, productId])
-  @@index([productId])
-  @@index([rating])
 }
 
-// ... keep WishlistItem, SavedAddress, Notification, Analytics, InventoryAlert, Category as before
+model UserAnalytics {
+  id       String @id @default(cuid())
+  user     User   @relation(fields: [userId], references: [id])
+  userId   String
+  key      String
+  value    String
+  createdAt DateTime @default(now())
+}
+
+model VendorAnalytics {
+  id        String @id @default(cuid())
+  vendor    Vendor @relation(fields: [vendorId], references: [id])
+  vendorId  String
+  key       String
+  value     String
+  createdAt DateTime @default(now())
+}
+
+model InventoryAlert {
+  id        String  @id @default(cuid())
+  vendor    Vendor  @relation(fields: [vendorId], references: [id])
+  vendorId  String
+  product   Product @relation(fields: [productId], references: [id])
+  productId String
+  message   String  @db.Text
+  isRead    Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
