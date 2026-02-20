@@ -354,4 +354,4 @@ model InventoryAlert {
 
   vendor  Vendor  @relation(fields: [vendorId], references: [id])
   product Product @relation(fields: [productId], references: [id])
-}
+
