@@ -92,7 +92,7 @@ model Vendor {
   city          String?
   country       String?
   zipCode       String?
-  description   String? @db.Text
+  description   String?  @db.Text
   businessType  String?
   taxId         String?
   website       String?
@@ -325,18 +325,18 @@ model Notification {
 // Analytics
 // ----------------------
 model UserAnalytics {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
-  data      String? @db.Text
+  data      String?  @db.Text
   createdAt DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id])
 }
 
 model VendorAnalytics {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   vendorId  String
-  data      String? @db.Text
+  data      String?  @db.Text
   createdAt DateTime @default(now())
 
   vendor Vendor @relation(fields: [vendorId], references: [id])
@@ -346,7 +346,7 @@ model VendorAnalytics {
 // Inventory Alerts
 // ----------------------
 model InventoryAlert {
-  id        String @id @default(cuid())
+  id        String   @id @default(cuid())
   vendorId  String
   productId String
   message   String
@@ -355,3 +355,6 @@ model InventoryAlert {
   vendor  Vendor  @relation(fields: [vendorId], references: [id])
   product Product @relation(fields: [productId], references: [id])
 
+  @@index([vendorId])
+  @@index([productId])
+}
