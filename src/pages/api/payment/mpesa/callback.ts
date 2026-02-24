@@ -15,6 +15,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     console.log("[MPesa Callback] Data received:", JSON.stringify(callbackData));
 
     // Process the callback with the M-Pesa provider
+    if (!MPesaPaymentProvider.handleCallback) {
+      console.error("[MPesa Callback] handleCallback not implemented");
+      return res.status(200).json({ received: true, error: "Handler not implemented" });
+    }
     const paymentResult = await MPesaPaymentProvider.handleCallback(callbackData);
 
     if (!paymentResult.paymentId) {
