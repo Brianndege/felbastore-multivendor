@@ -1,12 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const session = await getServerSession(req, res, {});
+  const session = await getServerSession(req, res, authOptions);
 
   if (!session || session.user.role !== "user") {
     return res.status(401).json({ error: "Unauthorized" });
@@ -50,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         quantity: item.quantity,
         price: price,
         productName: item.product.name,
-        productImage: JSON.parse(item.product.images || '[]')[0] || null
+        productImage: item.product.images[0] || null
       };
     });
 
@@ -61,35 +62,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Generate unique order number
     const orderNumber = `ORD-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
-    // Create order
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        userId,
-        totalAmount,
-        shippingAmount,
-        taxAmount,
-        discountAmount: 0,
-        paymentMethod: paymentMethod || "pending",
-        shippingAddress: JSON.stringify(shippingAddress),
-        billingAddress: JSON.stringify(billingAddress),
-        orderItems: {
-          create: orderItems
-        }
-      },
-      include: {
-        orderItems: {
-          include: {
-            product: true,
-            vendor: true
+    // Create order and clear cart atomically
+    const order = await prisma.$transaction(async (tx) => {
+      const created = await tx.order.create({
+        data: {
+          orderNumber,
+          userId,
+          totalAmount,
+          shippingAmount,
+          taxAmount,
+          discountAmount: 0,
+          paymentMethod: paymentMethod || "pending",
+          shippingAddress: JSON.stringify(shippingAddress),
+          billingAddress: JSON.stringify(billingAddress),
+          orderItems: {
+            create: orderItems
+          }
+        },
+        include: {
+          orderItems: {
+            include: {
+              product: true,
+              vendor: true
+            }
           }
         }
-      }
-    });
+      });
 
-    // Clear cart after successful order creation
-    await prisma.cartItem.deleteMany({
-      where: { userId }
+      // Clear cart after successful order creation
+      await tx.cartItem.deleteMany({
+        where: { userId }
+      });
+
+      return created;
     });
 
     return res.status(201).json({
