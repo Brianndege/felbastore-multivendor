@@ -65,7 +65,7 @@ export async function getVendorDashboardStats(vendorId: string): Promise<VendorS
   const now = new Date();
   const monthlyRevenue = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    const month = d.toLocaleString('default', { month: 'short', year: '2-digit' });
+    const month = d.toLocaleString('en-US', { month: 'short', year: '2-digit' });
     const monthItems = paidItems.filter(item => {
       const itemDate = new Date(item.order.createdAt);
       return itemDate.getFullYear() === d.getFullYear() && itemDate.getMonth() === d.getMonth();
@@ -123,7 +123,7 @@ export async function getAdminDashboardStats(): Promise<AdminStats> {
   const now = new Date();
   const revenueByMonth = Array.from({ length: 6 }, (_, i) => {
     const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-    const month = d.toLocaleString('default', { month: 'short', year: '2-digit' });
+    const month = d.toLocaleString('en-US', { month: 'short', year: '2-digit' });
     const monthOrders = orders.filter(o => {
       const od = new Date(o.createdAt);
       return od.getFullYear() === d.getFullYear() && od.getMonth() === d.getMonth() && o.paymentStatus === 'paid';

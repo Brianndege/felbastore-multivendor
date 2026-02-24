@@ -57,7 +57,7 @@ export function Navbar() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full" aria-label="User menu">
                   <Avatar className="h-9 w-9">
-                    <AvatarImage src={undefined} alt={session.user.name ?? ''} />
+                    <AvatarImage src={session.user.image ?? undefined} alt={session.user.name ?? ''} />
                     <AvatarFallback>{session.user.name?.[0]?.toUpperCase() ?? 'U'}</AvatarFallback>
                   </Avatar>
                 </Button>
