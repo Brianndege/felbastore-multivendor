@@ -1,39 +1,17 @@
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  reactStrictMode: true,
-  // Skip type checking during build
-  typescript: {
-    ignoreBuildErrors: true,
-  },
-  // Skip ESLint during build
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  // Configure image domains
-  images: {
-    remotePatterns: [
+module.exports = {
+  async headers() {
+    return [
       {
-        protocol: 'https',
-        hostname: 'source.unsplash.com',
-        pathname: '**'
+        source: '/(.*)',
+        headers: [
+          { key: 'X-Frame-Options', value: 'DENY' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000' },
+          { key: 'Content-Security-Policy', value: "default-src 'self';" },
+          { key: 'X-XSS-Protection', value: '1; mode=block' },
+          { key: 'Referrer-Policy', value: 'no-referrer' }
+        ],
       },
-      {
-        protocol: 'https',
-        hostname: 'images.unsplash.com',
-        pathname: '**'
-      },
-      {
-        protocol: 'https',
-        hostname: 'ext.same-assets.com',
-        pathname: '**'
-      },
-      {
-        protocol: 'https',
-        hostname: 'ugc.same-assets.com',
-        pathname: '**'
-      }
-    ],
+    ];
   },
-}
-
-export default nextConfig;
+};
