@@ -112,9 +112,6 @@ async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
           data: {
             vendorId: item.vendorId,
             productId: item.productId,
-            type: product.inventory - item.quantity <= 0 ? "out_of_stock" : "low_stock",
-            threshold: product.lowStockThreshold,
-            currentStock: product.inventory - item.quantity,
             message: `Product "${product.name}" is ${product.inventory - item.quantity <= 0 ? 'out of stock' : 'running low'}.`,
           }
         });
@@ -124,15 +121,8 @@ async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
       await tx.notification.create({
         data: {
           vendorId: item.vendorId,
-          type: "order",
           title: "New Order Received",
           message: `You have received a new order for ${item.quantity}x ${item.productName}`,
-          data: JSON.stringify({
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            productId: item.productId,
-            quantity: item.quantity
-          })
         }
       });
     }
@@ -141,13 +131,8 @@ async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
     await tx.notification.create({
       data: {
         userId: order.userId,
-        type: "order",
         title: "Order Confirmed",
         message: `Your order #${order.orderNumber} has been confirmed and is being processed.`,
-        data: JSON.stringify({
-          orderId: order.id,
-          orderNumber: order.orderNumber
-        })
       }
     });
   });
@@ -181,15 +166,8 @@ async function handleFailedPayment(paymentIntent: Stripe.PaymentIntent) {
   await prisma.notification.create({
     data: {
       userId: order.userId,
-      type: "order",
       title: "Payment Failed",
       message: `Your payment for order #${order.orderNumber} has failed. Please try again.`,
-      priority: "high",
-      data: JSON.stringify({
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        reason: paymentIntent.last_payment_error?.message || "Unknown error"
-      })
     }
   });
 

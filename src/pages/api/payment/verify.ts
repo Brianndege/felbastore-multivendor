@@ -76,9 +76,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                   data: {
                     vendorId: item.vendorId,
                     productId: item.productId,
-                    type: product.inventory - item.quantity <= 0 ? "out_of_stock" : "low_stock",
-                    threshold: product.lowStockThreshold,
-                    currentStock: product.inventory - item.quantity,
                     message: `Product "${product.name}" is ${product.inventory - item.quantity <= 0 ? 'out of stock' : 'running low'}.`,
                   }
                 });
@@ -88,15 +85,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               await tx.notification.create({
                 data: {
                   vendorId: item.vendorId,
-                  type: "order",
                   title: "New Order Received",
                   message: `You have received a new order for ${item.quantity}x ${item.productName}`,
-                  data: JSON.stringify({
-                    orderId: order.id,
-                    orderNumber: order.orderNumber,
-                    productId: item.productId,
-                    quantity: item.quantity
-                  })
                 }
               });
             }
@@ -105,13 +95,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             await tx.notification.create({
               data: {
                 userId: order.userId,
-                type: "order",
                 title: "Order Confirmed",
                 message: `Your order #${order.orderNumber} has been confirmed and is being processed.`,
-                data: JSON.stringify({
-                  orderId: order.id,
-                  orderNumber: order.orderNumber
-                })
               }
             });
           });

@@ -85,7 +85,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;   // 🔥 IMPORTANT
         session.user.role = token.role as string;
-        session.user.storeName = token.storeName as string | null;
+        session.user.storeName = token.storeName as string | undefined;
       }
       return session;
     },
