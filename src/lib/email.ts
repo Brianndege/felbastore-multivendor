@@ -9,33 +9,39 @@ const {
   NEXTAUTH_URL,
 } = process.env;
 
-// Basic env validation (prevents silent crashes)
-if (
-  !EMAIL_SERVER_HOST ||
-  !EMAIL_SERVER_PORT ||
-  !EMAIL_SERVER_USER ||
-  !EMAIL_SERVER_PASSWORD ||
-  !EMAIL_FROM ||
-  !NEXTAUTH_URL
-) {
-  throw new Error("Missing required email environment variables.");
+function hasEmailConfig() {
+  return Boolean(
+    EMAIL_SERVER_HOST &&
+    EMAIL_SERVER_PORT &&
+    EMAIL_SERVER_USER &&
+    EMAIL_SERVER_PASSWORD &&
+    EMAIL_FROM &&
+    NEXTAUTH_URL
+  );
 }
 
-const transporter = nodemailer.createTransport({
-  host: EMAIL_SERVER_HOST,
-  port: parseInt(EMAIL_SERVER_PORT, 10),
-  secure: parseInt(EMAIL_SERVER_PORT, 10) === 465, // true for 465, false otherwise
-  auth: {
-    user: EMAIL_SERVER_USER,
-    pass: EMAIL_SERVER_PASSWORD,
-  },
-});
+const transporter = hasEmailConfig()
+  ? nodemailer.createTransport({
+      host: EMAIL_SERVER_HOST,
+      port: parseInt(EMAIL_SERVER_PORT!, 10),
+      secure: parseInt(EMAIL_SERVER_PORT!, 10) === 465,
+      auth: {
+        user: EMAIL_SERVER_USER,
+        pass: EMAIL_SERVER_PASSWORD,
+      },
+    })
+  : null;
 
 export async function sendVerificationEmail(
   email: string,
   token: string,
   userType: "user" | "vendor"
 ) {
+  if (!hasEmailConfig() || !transporter || !NEXTAUTH_URL) {
+    console.warn("[email] Email config missing. Skipping verification email send.");
+    return { success: false };
+  }
+
   const verificationUrl = `${NEXTAUTH_URL}/auth/verify-email?token=${token}&type=${userType}`;
 
   try {
@@ -72,6 +78,11 @@ export async function sendPasswordResetEmail(
   token: string,
   userType: "user" | "vendor"
 ) {
+  if (!hasEmailConfig() || !transporter || !NEXTAUTH_URL) {
+    console.warn("[email] Email config missing. Skipping password reset email send.");
+    return { success: false };
+  }
+
   const resetUrl = `${NEXTAUTH_URL}/auth/reset-password?token=${token}&type=${userType}`;
 
   try {

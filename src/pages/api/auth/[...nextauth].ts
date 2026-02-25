@@ -37,7 +37,7 @@ export const authOptions: NextAuthOptions = {
 
         let user: any = null;
 
-        if (credentials.userType === "user") {
+        if (credentials.userType === "user" || credentials.userType === "admin") {
           user = await prisma.user.findUnique({
             where: { email: credentials.email },
           });
@@ -48,6 +48,14 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!user || !user.password) return null;
+
+        if (credentials.userType === "admin" && user.role !== "admin") {
+          return null;
+        }
+
+        if (credentials.userType === "user" && user.role === "admin") {
+          return null;
+        }
 
         const isPasswordValid = await bcrypt.compare(
           credentials.password,
