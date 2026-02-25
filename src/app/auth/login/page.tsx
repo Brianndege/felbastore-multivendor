@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, getSession } from "next-auth/react";
+import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,12 @@ export default function LoginPage() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
+    const callbackUrl =
+      userType === "vendor"
+        ? "/vendors/dashboard"
+        : userType === "admin"
+          ? "/admin"
+          : "/";
 
     try {
       const result = await signIn("credentials", {
@@ -29,21 +35,19 @@ export default function LoginPage() {
         password,
         userType,
         redirect: false,
+        callbackUrl,
       });
 
       if (result?.error) {
         toast.error("Invalid credentials");
       } else {
         toast.success("Login successful!");
-        // Get the session to check user role and redirect appropriately
-        const session = await getSession();
-        if (session?.user?.role === "admin") {
-          router.push("/admin");
-        } else if (session?.user?.role === "vendor") {
-          router.push("/vendors/dashboard");
+        if (result?.url) {
+          router.push(result.url);
         } else {
-          router.push("/");
+          router.push(callbackUrl);
         }
+        router.refresh();
       }
     } catch (error) {
       toast.error("An error occurred during login");
