@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,7 +13,95 @@ import { toast } from "sonner";
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<"user" | "vendor">("user");
+  const [emailInput, setEmailInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const autoLoginAttempted = useRef(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const attemptLogin = async (
+    email: string,
+    password: string,
+    userType: "user" | "vendor"
+  ) => {
+    const callbackUrl = userType === "vendor" ? "/vendors/dashboard" : "/";
+    const result = await signIn("credentials", {
+      email,
+      password,
+      userType,
+      redirect: false,
+      callbackUrl,
+    });
+
+    if (result?.error) {
+      return { ok: false, callbackUrl };
+    }
+
+    return {
+      ok: true,
+      callbackUrl,
+      url: result?.url,
+    };
+  };
+
+  useEffect(() => {
+    const email = searchParams.get("email") || "";
+    const password = searchParams.get("password") || "";
+    const userTypeParam = searchParams.get("userType");
+
+    if (email) {
+      setEmailInput(email);
+    }
+
+    if (password) {
+      setPasswordInput(password);
+    }
+
+    if (!email || !password || autoLoginAttempted.current) {
+      return;
+    }
+
+    autoLoginAttempted.current = true;
+
+    const runAutoLogin = async () => {
+      setIsLoading(true);
+      try {
+        if (userTypeParam === "vendor" || userTypeParam === "user") {
+          setActiveTab(userTypeParam);
+          const directResult = await attemptLogin(email, password, userTypeParam);
+          if (directResult.ok) {
+            router.push(directResult.url || directResult.callbackUrl);
+            router.refresh();
+            return;
+          }
+        } else {
+          const userResult = await attemptLogin(email, password, "user");
+          if (userResult.ok) {
+            router.push(userResult.url || userResult.callbackUrl);
+            router.refresh();
+            return;
+          }
+
+          const vendorResult = await attemptLogin(email, password, "vendor");
+          if (vendorResult.ok) {
+            setActiveTab("vendor");
+            router.push(vendorResult.url || vendorResult.callbackUrl);
+            router.refresh();
+            return;
+          }
+        }
+
+        toast.error("Invalid credentials");
+      } catch (error) {
+        toast.error("An error occurred during login");
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    runAutoLogin();
+  }, [router, searchParams]);
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>, userType: "user" | "vendor") => {
     e.preventDefault();
@@ -22,28 +110,18 @@ export default function LoginPage() {
     const formData = new FormData(e.currentTarget);
     const email = formData.get("email") as string;
     const password = formData.get("password") as string;
-    const callbackUrl =
-      userType === "vendor"
-        ? "/vendors/dashboard"
-        : "/";
 
     try {
-      const result = await signIn("credentials", {
-        email,
-        password,
-        userType,
-        redirect: false,
-        callbackUrl,
-      });
+      const result = await attemptLogin(email, password, userType);
 
-      if (result?.error) {
+      if (!result.ok) {
         toast.error("Invalid credentials");
       } else {
         toast.success("Login successful!");
-        if (result?.url) {
+        if (result.url) {
           router.push(result.url);
         } else {
-          router.push(callbackUrl);
+          router.push(result.callbackUrl);
         }
         router.refresh();
       }
@@ -62,7 +140,7 @@ export default function LoginPage() {
           <p className="text-gray-500">Sign in to your account</p>
         </div>
 
-        <Tabs defaultValue="user" className="w-full">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "user" | "vendor")} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="user">Customer</TabsTrigger>
             <TabsTrigger value="vendor">Vendor</TabsTrigger>
@@ -85,6 +163,8 @@ export default function LoginPage() {
                       name="email"
                       type="email"
                       placeholder="john@example.com"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
                       required
                     />
                   </div>
@@ -94,6 +174,8 @@ export default function LoginPage() {
                       id="user-password"
                       name="password"
                       type="password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
                       required
                     />
                   </div>
@@ -130,6 +212,8 @@ export default function LoginPage() {
                       name="email"
                       type="email"
                       placeholder="vendor@example.com"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
                       required
                     />
                   </div>
@@ -139,6 +223,8 @@ export default function LoginPage() {
                       id="vendor-password"
                       name="password"
                       type="password"
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
                       required
                     />
                   </div>
