@@ -15,7 +15,7 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = async (e: React.FormEvent<HTMLFormElement>, userType: "user" | "vendor" | "admin") => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>, userType: "user" | "vendor") => {
     e.preventDefault();
     setIsLoading(true);
 
@@ -25,9 +25,7 @@ export default function LoginPage() {
     const callbackUrl =
       userType === "vendor"
         ? "/vendors/dashboard"
-        : userType === "admin"
-          ? "/admin"
-          : "/";
+        : "/";
 
     try {
       const result = await signIn("credentials", {
@@ -65,10 +63,9 @@ export default function LoginPage() {
         </div>
 
         <Tabs defaultValue="user" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="user">Customer</TabsTrigger>
             <TabsTrigger value="vendor">Vendor</TabsTrigger>
-            <TabsTrigger value="admin">Admin</TabsTrigger>
           </TabsList>
 
           <TabsContent value="user">
@@ -156,45 +153,6 @@ export default function LoginPage() {
                       Register as vendor
                     </Link>
                   </p>
-                </CardFooter>
-              </form>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="admin">
-            <Card>
-              <CardHeader>
-                <CardTitle>Admin Login</CardTitle>
-                <CardDescription>
-                  Access the admin area
-                </CardDescription>
-              </CardHeader>
-              <form onSubmit={(e) => handleLogin(e, "admin")}>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="admin-email">Email</Label>
-                    <Input
-                      id="admin-email"
-                      name="email"
-                      type="email"
-                      placeholder="admin@example.com"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="admin-password">Password</Label>
-                    <Input
-                      id="admin-password"
-                      name="password"
-                      type="password"
-                      required
-                    />
-                  </div>
-                </CardContent>
-                <CardFooter className="flex flex-col space-y-2">
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? "Signing in..." : "Sign In"}
-                  </Button>
                 </CardFooter>
               </form>
             </Card>
