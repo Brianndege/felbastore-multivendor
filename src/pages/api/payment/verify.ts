@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import { verifyPayment } from "@/lib/payments";
 
@@ -9,7 +10,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // We allow both authenticated and webhook requests
-  const session = await getServerSession(req, res, {});
+  const session = await getServerSession(req, res, authOptions);
   const isWebhook = req.headers['x-webhook-source'] === 'payment-provider';
 
   // For user requests, verify authentication

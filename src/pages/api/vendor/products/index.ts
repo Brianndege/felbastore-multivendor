@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
-import { getSession } from "next-auth/react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import formidable from "formidable";
 import fs from "fs";
 import sharp from "sharp"; // For image resizing/cropping
@@ -11,7 +12,7 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  const session = await getSession({ req });
+  const session = await getServerSession(req, res, authOptions);
 
   if (!session || session.user.role !== "vendor") {
     return res.status(401).json({ message: "Unauthorized" });
@@ -41,6 +42,7 @@ export default async function handler(req, res) {
         // Handle images
         let images: string[] = [];
         if (files.images) {
+          fs.mkdirSync("public/uploads", { recursive: true });
           const uploadedFiles = Array.isArray(files.images) ? files.images : [files.images];
 
           for (const file of uploadedFiles) {
@@ -49,9 +51,10 @@ export default async function handler(req, res) {
               .resize(800, 800, { fit: "cover" })
               .toBuffer();
 
-            const uploadPath = `public/uploads/${file.originalFilename}`;
+            const safeName = file.originalFilename || `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
+            const uploadPath = `public/uploads/${safeName}`;
             fs.writeFileSync(uploadPath, buffer);
-            images.push(`/uploads/${file.originalFilename}`);
+            images.push(`/uploads/${safeName}`);
           }
         }
 
@@ -69,7 +72,7 @@ export default async function handler(req, res) {
             currency: String(currency) || "USD",
             images,
             vendorId,
-            status: "Active",
+            status: "active",
           },
         });
 

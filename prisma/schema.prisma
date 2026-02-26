@@ -16,7 +16,7 @@ generator client {
 model PasswordResetToken {
   id        String   @id @default(cuid())
   email     String
-  token     String
+  token     String   @unique
   expires   DateTime
   createdAt DateTime @default(now())
 
@@ -30,7 +30,7 @@ model PasswordResetToken {
 model EmailVerificationToken {
   id        String   @id @default(cuid())
   email     String
-  token     String
+  token     String   @unique
   expires   DateTime
   createdAt DateTime @default(now())
 
@@ -315,8 +315,11 @@ model Notification {
   id        String   @id @default(cuid())
   userId    String?
   vendorId  String?
+  type      String?  @default("general")
+  priority  String?  @default("normal")
   title     String
   message   String
+  data      String?  @db.Text
   isRead    Boolean   @default(false)
   createdAt DateTime  @default(now())
 
@@ -352,6 +355,9 @@ model InventoryAlert {
   id        String   @id @default(cuid())
   vendorId  String
   productId String
+  type      String?  @default("low_stock")
+  threshold Int?
+  currentStock Int?
   message   String
   createdAt DateTime @default(now())
 

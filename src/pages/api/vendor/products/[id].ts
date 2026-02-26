@@ -1,8 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { getSession } from "next-auth/react";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 
 export default async function handler(req, res) {
-  const session = await getSession({ req });
+  const session = await getServerSession(req, res, authOptions);
 
   if (!session || session.user.role !== "vendor") {
     return res.status(401).json({ message: "Unauthorized" });

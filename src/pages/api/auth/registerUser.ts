@@ -7,7 +7,7 @@ import crypto from "crypto";
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     console.log('[registerUser] Method not allowed:', req.method);
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ code: "METHOD_NOT_ALLOWED", message: "Method not allowed" });
   }
 
   console.log('[registerUser] Registration attempt started');
@@ -15,7 +15,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!name || !email || !password) {
     console.log('[registerUser] Missing fields - name:', !!name, 'email:', !!email, 'password:', !!password);
-    return res.status(400).json({ error: "Missing required fields. Please provide name, email, and password." });
+    return res.status(400).json({
+      code: "MISSING_FIELDS",
+      message: "Missing required fields. Please provide name, email, and password.",
+    });
   }
 
   try {
@@ -24,7 +27,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (existing) {
       console.log('[registerUser] User already exists:', email);
-      return res.status(409).json({ error: "An account with this email already exists." });
+      return res.status(409).json({ code: "EMAIL_ALREADY_EXISTS", message: "An account with this email already exists." });
     }
 
     console.log('[registerUser] Hashing password...');
@@ -60,6 +63,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     console.log('[registerUser] Registration completed successfully');
     return res.status(201).json({
+      code: "REGISTER_SUCCESS",
       user: {
         id: newUser.id,
         name: newUser.name,
@@ -82,6 +86,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (err instanceof Error) {
       if (err.message.includes('Unique constraint')) {
         errorMessage = "An account with this email already exists.";
+      } else if ((err as any).code === 'P2002') {
+        errorMessage = "An account with this email already exists.";
       } else if (err.message.includes('connection')) {
         errorMessage = "Database connection error. Please try again later.";
       } else {
@@ -89,6 +95,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
-    return res.status(500).json({ error: errorMessage });
+    return res.status(500).json({ code: "REGISTRATION_FAILED", message: errorMessage });
   }
 }

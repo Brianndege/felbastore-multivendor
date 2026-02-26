@@ -48,7 +48,7 @@ export default function VendorRegisterPage() {
         toast.success("Vendor account created successfully! Please log in.");
         router.push("/auth/login");
       } else {
-        toast.error(data.error || "Registration failed");
+        toast.error(data.message || data.error || "Registration failed");
       }
     } catch (err) {
       console.error('Vendor registration error:', err);

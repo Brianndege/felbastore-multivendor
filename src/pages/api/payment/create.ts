@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import {
   processPayment,
@@ -13,7 +14,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   // Verify session and authorization
-  const session = await getServerSession(req, res, {});
+  const session = await getServerSession(req, res, authOptions);
   if (!session || session.user.role !== "user") {
     return res.status(401).json({ error: "Unauthorized" });
   }

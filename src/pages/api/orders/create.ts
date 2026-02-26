@@ -1,12 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
 
-  const session = await getServerSession(req, res, {});
+  const session = await getServerSession(req, res, authOptions);
 
   if (!session || session.user.role !== "user") {
     return res.status(401).json({ error: "Unauthorized" });
@@ -50,7 +51,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         quantity: item.quantity,
         price: price,
         productName: item.product.name,
-        productImage: JSON.parse(item.product.images || '[]')[0] || null
+        productImage: item.product.images?.[0] || null
       };
     });
 

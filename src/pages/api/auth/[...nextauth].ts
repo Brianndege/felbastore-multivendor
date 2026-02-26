@@ -32,7 +32,11 @@ export const authOptions: NextAuthOptions = {
         console.log("[NextAuth] Login attempt started");
 
         if (!credentials?.email || !credentials?.password || !credentials?.userType) {
-          return null;
+          throw new Error("MISSING_CREDENTIALS");
+        }
+
+        if (!["user", "vendor", "admin"].includes(credentials.userType)) {
+          throw new Error("INVALID_USER_TYPE");
         }
 
         let user: any = null;
@@ -47,14 +51,26 @@ export const authOptions: NextAuthOptions = {
           });
         }
 
-        if (!user || !user.password) return null;
+        if (!user) {
+          if (credentials.userType === "vendor") {
+            throw new Error("VENDOR_NOT_FOUND");
+          }
+          if (credentials.userType === "admin") {
+            throw new Error("ADMIN_NOT_FOUND");
+          }
+          throw new Error("USER_NOT_FOUND");
+        }
+
+        if (!user.password) {
+          throw new Error("PASSWORD_NOT_SET");
+        }
 
         if (credentials.userType === "admin" && user.role !== "admin") {
-          return null;
+          throw new Error("ADMIN_ACCESS_DENIED");
         }
 
         if (credentials.userType === "user" && user.role === "admin") {
-          return null;
+          throw new Error("USER_ROLE_MISMATCH");
         }
 
         const isPasswordValid = await bcrypt.compare(
@@ -62,7 +78,9 @@ export const authOptions: NextAuthOptions = {
           user.password
         );
 
-        if (!isPasswordValid) return null;
+        if (!isPasswordValid) {
+          throw new Error("INVALID_PASSWORD");
+        }
 
         return {
           id: user.id,
