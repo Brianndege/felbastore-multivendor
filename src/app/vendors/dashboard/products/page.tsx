@@ -699,7 +699,7 @@ export default function VendorProductsPage() {
   };
 
   if (status === "loading" || loading) {
-    return <div className="container mx-auto px-4 py-8">Loading...</div>;
+    return <div className="container mx-auto px-4 py-4 md:py-8">Loading...</div>;
   }
 
   const moderationNotifications = notifications.filter(
@@ -710,14 +710,15 @@ export default function VendorProductsPage() {
   );
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex justify-between items-center mb-4">
+    <div className="container mx-auto px-4 py-4 md:py-8">
+      <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <h1 className="text-3xl font-bold">Your Products</h1>
-        <div className="flex gap-2">
-          <Button onClick={openAddModal}>Add Product</Button>
-          <Button type="button" variant="outline" onClick={downloadBulkTemplate}>Download Template</Button>
-          <Button type="button" variant="outline" onClick={copyTroubleshootingTips}>Copy Troubleshooting Tips</Button>
+        <div className="mobile-stack flex flex-wrap gap-2">
+          <Button className="touch-target" onClick={openAddModal}>Add Product</Button>
+          <Button className="touch-target" type="button" variant="outline" onClick={downloadBulkTemplate}>Download Template</Button>
+          <Button className="touch-target" type="button" variant="outline" onClick={copyTroubleshootingTips}>Copy Troubleshooting Tips</Button>
           <Button
+            className="touch-target"
             type="button"
             variant="outline"
             onClick={exportFailedRowsCsv}
@@ -730,7 +731,7 @@ export default function VendorProductsPage() {
             type="file"
             accept=".csv, .xlsx"
             onChange={handleBulkUpload}
-            className="max-w-[220px]"
+            className="w-full sm:max-w-[240px]"
           />
         </div>
       </div>
@@ -738,12 +739,13 @@ export default function VendorProductsPage() {
       <div className="mb-4 rounded-md border p-3 text-sm text-gray-600">
         <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <p className="font-medium">Moderation notifications</p>
-          <div className="flex items-center gap-2">
+          <div className="mobile-stack flex flex-wrap items-center gap-2">
             <Badge variant={unreadCount > 0 ? "destructive" : "outline"}>{unreadCount} unread</Badge>
-            <Button type="button" variant="outline" size="sm" onClick={fetchNotifications} disabled={notificationsLoading}>
+            <Button className="touch-target" type="button" variant="outline" size="sm" onClick={fetchNotifications} disabled={notificationsLoading}>
               {notificationsLoading ? "Refreshing..." : "Refresh"}
             </Button>
             <Button
+              className="touch-target"
               type="button"
               size="sm"
               onClick={markAllNotificationsRead}
@@ -809,7 +811,7 @@ export default function VendorProductsPage() {
           </Button>
         </div>
 
-        <div className="mb-4 grid gap-2 md:grid-cols-4">
+        <div className="mb-4 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <Select
             name="methodKind"
             value={paymentMethodForm.methodKind}
@@ -833,13 +835,13 @@ export default function VendorProductsPage() {
             value={paymentMethodForm.config}
             onChange={(event) => setPaymentMethodForm((prev) => ({ ...prev, config: event.target.value }))}
           />
-          <Button type="button" onClick={submitPaymentMethodRequest} disabled={isSavingPaymentMethod}>
+          <Button className="touch-target" type="button" onClick={submitPaymentMethodRequest} disabled={isSavingPaymentMethod}>
             {isSavingPaymentMethod ? "Submitting..." : "Submit for Approval"}
           </Button>
         </div>
 
         {vendorPaymentMethods.length > 0 ? (
-          <div className="mb-3 overflow-x-auto rounded border">
+          <div className="table-scroll mb-3 rounded border">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -886,7 +888,7 @@ export default function VendorProductsPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button type="button" onClick={updateProductPaymentMethods} disabled={isLinkingPaymentMethods || !selectedProductIdForPayments}>
+            <Button className="touch-target" type="button" onClick={updateProductPaymentMethods} disabled={isLinkingPaymentMethods || !selectedProductIdForPayments}>
               {isLinkingPaymentMethods ? "Saving..." : "Save Product Payment Methods"}
             </Button>
           </div>
@@ -917,7 +919,7 @@ export default function VendorProductsPage() {
         </div>
       </div>
 
-      <div className="rounded-md border">
+      <div className="table-scroll rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
@@ -943,9 +945,9 @@ export default function VendorProductsPage() {
                     {product.status.replace("_", " ").toUpperCase()}
                   </Badge>
                 </TableCell>
-                <TableCell className="text-right flex gap-2 justify-end">
-                  <Button variant="ghost" size="sm" onClick={() => openEditModal(product)}>Edit</Button>
-                  <Button variant="ghost" size="sm" onClick={() => handleDelete(product.id)}>Delete</Button>
+                <TableCell className="flex justify-end gap-2 text-right">
+                  <Button className="touch-target" variant="ghost" size="sm" onClick={() => openEditModal(product)}>Edit</Button>
+                  <Button className="touch-target" variant="ghost" size="sm" onClick={() => handleDelete(product.id)}>Delete</Button>
                 </TableCell>
               </TableRow>
             )) : (
@@ -997,11 +999,11 @@ export default function VendorProductsPage() {
 
             <div className="space-y-2">
               <p className="text-sm font-medium">Product Images</p>
-              <div className="flex gap-2">
-                <Button type="button" variant="outline" onClick={() => imageUploadInputRef.current?.click()}>
+              <div className="mobile-stack flex flex-wrap gap-2">
+                <Button className="touch-target" type="button" variant="outline" onClick={() => imageUploadInputRef.current?.click()}>
                   Upload Images
                 </Button>
-                <Button type="button" variant="outline" onClick={() => imageCameraInputRef.current?.click()}>
+                <Button className="touch-target" type="button" variant="outline" onClick={() => imageCameraInputRef.current?.click()}>
                   Take Photo
                 </Button>
               </div>
@@ -1043,9 +1045,9 @@ export default function VendorProductsPage() {
               </div>
             )}
 
-            <div className="flex justify-end gap-2 mt-4">
-              <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
-              <Button onClick={handleSave}>Save</Button>
+            <div className="mobile-stack mt-4 flex flex-wrap justify-end gap-2">
+              <Button className="touch-target" variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
+              <Button className="touch-target" onClick={handleSave}>Save</Button>
             </div>
           </div>
         </DialogContent>

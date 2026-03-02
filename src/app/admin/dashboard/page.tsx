@@ -748,7 +748,7 @@ export default function AdminDashboardPage() {
     : [];
 
   return (
-    <div className="container mx-auto max-w-6xl px-4 py-8">
+    <div className="container mx-auto max-w-6xl px-4 py-4 md:py-8">
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
         <p className="text-muted-foreground">Moderate product submissions and run one-click database write health checks.</p>
@@ -756,16 +756,17 @@ export default function AdminDashboardPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>Live Platform Monitoring</CardTitle>
               <CardDescription>Real-time stream for signups, orders, payment failures, and verification queue status.</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="mobile-stack flex flex-wrap items-center gap-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
+                className="touch-target"
                 onClick={() => void runInventoryScan()}
                 disabled={isRunningInventoryScan}
               >
@@ -850,12 +851,13 @@ export default function AdminDashboardPage() {
           ) : null}
 
           <div className="space-y-2">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h3 className="text-sm font-medium">Recent live events</h3>
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
+                className="touch-target"
                 onClick={clearLiveEventHistory}
                 disabled={liveEvents.length === 0}
               >
@@ -882,7 +884,7 @@ export default function AdminDashboardPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>Product Moderation Queue</CardTitle>
               <CardDescription>Review vendor product submissions, approve or reject them, and audit moderation activity.</CardDescription>
@@ -897,7 +899,7 @@ export default function AdminDashboardPage() {
             {selectedProduct ? ` Selected: ${selectedProduct.name}` : ""}
           </p>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-start gap-2 sm:items-center">
             <Checkbox
               id="show-unreviewed-only"
               checked={showUnreviewedOnly}
@@ -913,15 +915,17 @@ export default function AdminDashboardPage() {
               type="button"
               variant="outline"
               size="sm"
+              className="touch-target"
               onClick={resetModerationUiPreferences}
             >
               Reset UI Preferences
             </Button>
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="mobile-stack flex flex-wrap gap-2">
             <Button
               size="sm"
+              className="touch-target"
               onClick={() => void reviewSelectedAndNext("approve")}
               disabled={!selectedProduct || isReviewingSelection || isLoadingModeration}
             >
@@ -930,6 +934,7 @@ export default function AdminDashboardPage() {
             <Button
               size="sm"
               variant="destructive"
+              className="touch-target"
               onClick={() => void reviewSelectedAndNext("reject")}
               disabled={!selectedProduct || isReviewingSelection || isLoadingModeration}
             >
@@ -1022,11 +1027,12 @@ export default function AdminDashboardPage() {
               />
             </div>
 
-            <div className="flex items-end gap-2">
-              <Button onClick={() => void loadModerationQueue()} disabled={isLoadingModeration}>
+            <div className="mobile-stack flex flex-wrap items-end gap-2">
+              <Button className="touch-target" onClick={() => void loadModerationQueue()} disabled={isLoadingModeration}>
                 {isLoadingModeration ? "Loading..." : "Apply Filters"}
               </Button>
               <Button
+                className="touch-target"
                 variant="outline"
                 onClick={() => {
                   setModerationPage(1);
@@ -1047,7 +1053,7 @@ export default function AdminDashboardPage() {
 
           {moderationError && <p className="text-sm text-destructive">{moderationError}</p>}
 
-          <div className="overflow-x-auto rounded-md border">
+          <div className="table-scroll rounded-md border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr>
@@ -1165,12 +1171,13 @@ export default function AdminDashboardPage() {
             )}
           </div>
 
-          <div className="flex items-center justify-between text-sm">
+          <div className="flex flex-col gap-2 text-sm sm:flex-row sm:items-center sm:justify-between">
             <p className="text-muted-foreground">Page {moderationPage} of {totalPages}</p>
-            <div className="flex gap-2">
+            <div className="mobile-stack flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
+                className="touch-target"
                 disabled={moderationPage <= 1 || isLoadingModeration}
                 onClick={() => setModerationPage((prev) => Math.max(1, prev - 1))}
               >
@@ -1179,6 +1186,7 @@ export default function AdminDashboardPage() {
               <Button
                 variant="outline"
                 size="sm"
+                className="touch-target"
                 disabled={moderationPage >= totalPages || isLoadingModeration}
                 onClick={() => setModerationPage((prev) => Math.min(totalPages, prev + 1))}
               >
@@ -1191,21 +1199,21 @@ export default function AdminDashboardPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>Vendor Payment Method Approvals</CardTitle>
               <CardDescription>Approve or reject vendor-submitted payment options before they become available in checkout.</CardDescription>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="mobile-stack flex flex-wrap items-center gap-2">
               <Badge variant={pendingPaymentMethods.length > 0 ? "destructive" : "default"}>Pending: {pendingPaymentMethods.length}</Badge>
-              <Button variant="outline" size="sm" onClick={() => void loadPendingPaymentMethods()} disabled={isLoadingPaymentMethods}>
+              <Button className="touch-target" variant="outline" size="sm" onClick={() => void loadPendingPaymentMethods()} disabled={isLoadingPaymentMethods}>
                 {isLoadingPaymentMethods ? "Refreshing..." : "Refresh"}
               </Button>
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto rounded-md border">
+          <div className="table-scroll rounded-md border">
             <table className="w-full text-sm">
               <thead className="bg-muted/40">
                 <tr>
@@ -1254,12 +1262,12 @@ export default function AdminDashboardPage() {
 
       <Card className="mb-6">
         <CardHeader>
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle>Product Activity Feed</CardTitle>
               <CardDescription>Shows the latest product workflow events across vendor submissions and admin decisions.</CardDescription>
             </div>
-            <Button variant="outline" size="sm" onClick={() => void loadActivity()} disabled={isLoadingActivity}>
+            <Button className="touch-target" variant="outline" size="sm" onClick={() => void loadActivity()} disabled={isLoadingActivity}>
               {isLoadingActivity ? "Refreshing..." : "Refresh"}
             </Button>
           </div>
@@ -1308,7 +1316,7 @@ export default function AdminDashboardPage() {
             />
           </div>
 
-          <Button onClick={runDbHealthCheck} disabled={isRunning}>
+          <Button className="touch-target w-full sm:w-auto" onClick={runDbHealthCheck} disabled={isRunning}>
             {isRunning ? "Running check..." : "Run DB Write Health Check"}
           </Button>
         </CardContent>

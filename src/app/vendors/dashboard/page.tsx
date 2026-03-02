@@ -180,7 +180,7 @@ export default function VendorDashboardPage() {
   });
 
   if (status === "loading" || loading) {
-    return <div className="container mx-auto px-4 py-8">Loading...</div>;
+    return <div className="container mx-auto px-4 py-4 md:py-8">Loading...</div>;
   }
 
   if (!session || session.user.role !== "vendor") {
@@ -197,7 +197,7 @@ export default function VendorDashboardPage() {
   );
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-4 md:py-8">
       <div className="mb-8 flex flex-col justify-between gap-4 md:flex-row md:items-center">
         <div>
           <h1 className="text-3xl font-bold">Vendor Dashboard</h1>
@@ -205,11 +205,11 @@ export default function VendorDashboardPage() {
             Welcome back, {session.user.name}! Managing {session.user.storeName || "your store"}
           </p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <Button asChild variant="outline">
+        <div className="mobile-stack flex flex-wrap gap-3">
+          <Button asChild variant="outline" className="touch-target">
             <Link href="/vendors/dashboard">Store Settings</Link>
           </Button>
-          <Button asChild>
+          <Button asChild className="touch-target">
             <Link href="/vendors/dashboard/products">Add New Product</Link>
           </Button>
         </div>
@@ -306,11 +306,11 @@ export default function VendorDashboardPage() {
               <CardDescription>Shows admin decisions for your product submissions and any rejection reasons.</CardDescription>
             </div>
 
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => void fetchNotifications()} disabled={notificationsLoading}>
+            <div className="mobile-stack flex flex-wrap gap-2">
+              <Button className="touch-target" variant="outline" size="sm" onClick={() => void fetchNotifications()} disabled={notificationsLoading}>
                 {notificationsLoading ? "Refreshing..." : "Refresh"}
               </Button>
-              <Button size="sm" onClick={() => void markAllNotificationsRead()} disabled={isMarkingAllRead || unreadCount === 0}>
+              <Button className="touch-target" size="sm" onClick={() => void markAllNotificationsRead()} disabled={isMarkingAllRead || unreadCount === 0}>
                 {isMarkingAllRead ? "Marking..." : "Mark all as read"}
               </Button>
             </div>

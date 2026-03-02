@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,15 +17,30 @@ import { useCart } from "@/contexts/CartContext";
 export default function Header() {
   const { data: session, status } = useSession();
   const { getCartCount } = useCart();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen) {
+      document.body.style.overflow = "";
+      return;
+    }
+
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isMobileMenuOpen]);
+
+  const closeMobileMenu = () => setIsMobileMenuOpen(false);
 
   return (
-    <header className="border-b">
+    <header className="fixed inset-x-0 top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between">
+        <div className="flex h-16 items-center justify-between gap-3">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2">
-            <span className="text-2xl font-bold text-[#e16b22]">Felba</span>
-            <span className="text-2xl font-bold">store</span>
+          <Link href="/" className="flex items-center gap-2" onClick={closeMobileMenu}>
+            <span className="text-xl font-bold text-[#e16b22] sm:text-2xl">Felba</span>
+            <span className="text-xl font-bold sm:text-2xl">store</span>
           </Link>
 
           {/* Desktop Navigation */}
@@ -54,7 +70,7 @@ export default function Header() {
           </nav>
 
           {/* Search Bar */}
-          <div className="hidden flex-1 md:flex">
+          <div className="hidden flex-1 lg:flex">
             <div className="relative w-full max-w-sm">
               <Input
                 type="search"
@@ -72,7 +88,7 @@ export default function Header() {
           </div>
 
           {/* User Actions */}
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-3">
             {/* Cart */}
             <Link href="/cart" className="flex items-center gap-1 text-sm font-medium hover:text-[#e16b22]">
               <span className="relative">
@@ -83,7 +99,7 @@ export default function Header() {
                   </span>
                 )}
               </span>
-              <span className="hidden md:inline">Cart</span>
+              <span className="hidden sm:inline">Cart</span>
             </Link>
 
             {/* Account */}
@@ -148,7 +164,7 @@ export default function Header() {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <div className="flex items-center gap-2">
+              <div className="hidden items-center gap-2 sm:flex">
                 <Button asChild variant="ghost" size="sm">
                   <Link href="/auth/login">Login</Link>
                 </Button>
@@ -158,15 +174,22 @@ export default function Header() {
               </div>
             )}
 
-            {/* Mobile Menu Button - Would be connected to a mobile menu drawer in a real app */}
-            <Button variant="ghost" size="sm" className="md:hidden">
-              ☰
+            <Button
+              variant="ghost"
+              size="sm"
+              className="min-h-[44px] min-w-[44px] md:hidden"
+              aria-label={isMobileMenuOpen ? "Close menu" : "Open menu"}
+              aria-expanded={isMobileMenuOpen}
+              aria-controls="mobile-navigation"
+              onClick={() => setIsMobileMenuOpen((prev) => !prev)}
+            >
+              {isMobileMenuOpen ? "✕" : "☰"}
             </Button>
           </div>
         </div>
 
         {/* Mobile Search - Visible only on mobile */}
-        <div className="pb-3 md:hidden">
+        <div className="pb-3 lg:hidden">
           <div className="relative w-full">
             <Input
               type="search"
@@ -182,6 +205,76 @@ export default function Header() {
             </Button>
           </div>
         </div>
+
+        {isMobileMenuOpen && (
+          <>
+            <button
+              type="button"
+              aria-label="Close menu overlay"
+              className="fixed inset-0 z-40 bg-black/40 md:hidden"
+              onClick={closeMobileMenu}
+            />
+            <nav
+              id="mobile-navigation"
+              className="fixed right-0 top-0 z-50 h-full w-[85vw] max-w-sm overflow-y-auto border-l bg-background p-4 shadow-xl md:hidden"
+            >
+              <div className="mb-4 flex items-center justify-between">
+                <p className="text-lg font-semibold">Menu</p>
+                <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" onClick={closeMobileMenu}>
+                  ✕
+                </Button>
+              </div>
+
+              <ul className="space-y-2">
+                <li>
+                  <Link href="/products" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                    All Products
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/categories" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                    Categories
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/vendors" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                    Vendors
+                  </Link>
+                </li>
+                <li>
+                  <Link href="/deals" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                    Today's Deals
+                  </Link>
+                </li>
+                {session?.user?.role === "admin" && (
+                  <li>
+                    <Link href="/admin/dashboard" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                      Admin Dashboard
+                    </Link>
+                  </li>
+                )}
+                {session?.user?.role === "vendor" && (
+                  <li>
+                    <Link href="/vendors/dashboard" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                      Vendor Dashboard
+                    </Link>
+                  </li>
+                )}
+              </ul>
+
+              {!session?.user && (
+                <div className="mt-6 grid gap-2">
+                  <Button asChild variant="outline" className="w-full" onClick={closeMobileMenu}>
+                    <Link href="/auth/login">Login</Link>
+                  </Button>
+                  <Button asChild className="w-full" onClick={closeMobileMenu}>
+                    <Link href="/auth/register">Register</Link>
+                  </Button>
+                </div>
+              )}
+            </nav>
+          </>
+        )}
       </div>
     </header>
   );

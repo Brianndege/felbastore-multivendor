@@ -109,17 +109,17 @@ export default function ProductsPage() {
   ];
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="container mx-auto px-4 py-4 md:py-8">
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold">All Products</h1>
         <p className="text-gray-500">Browse our wide selection of products from trusted vendors</p>
       </div>
 
-      <div className="flex flex-col gap-6 md:flex-row">
+      <div className="flex flex-col gap-6 lg:flex-row">
         {/* Filters Sidebar */}
-        <div className="md:w-1/4">
-          <div className="sticky top-4 space-y-6 rounded-lg border bg-background p-4 shadow-sm">
+        <div className="lg:w-1/4">
+          <div className="space-y-6 rounded-lg border bg-background p-4 shadow-sm lg:sticky lg:top-20">
             <div>
               <h3 className="mb-2 font-medium">Search</h3>
               <div className="relative">
@@ -202,12 +202,12 @@ export default function ProductsPage() {
         {/* Products Grid */}
         <div className="flex-1">
           {/* Sort Options */}
-          <div className="mb-6 flex items-center justify-between">
+          <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-sm text-gray-500">Showing {products.length} products</p>
-            <div className="flex items-center gap-2">
+            <div className="flex w-full items-center gap-2 sm:w-auto">
               <span className="text-sm">Sort by:</span>
               <Select defaultValue="featured">
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="w-full sm:w-[180px]">
                   <SelectValue placeholder="Sort by" />
                 </SelectTrigger>
                 <SelectContent>
@@ -222,7 +222,7 @@ export default function ProductsPage() {
           </div>
 
           {/* Products */}
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {products.map((product) => (
               <Card key={product.id} className="overflow-hidden">
                 <div className="aspect-[4/3] w-full overflow-hidden">
@@ -248,11 +248,11 @@ export default function ProductsPage() {
                   </div>
                 </CardContent>
                 <CardFooter className="p-4 pt-0">
-                  <div className="flex w-full gap-2">
-                    <Button asChild variant="outline" size="sm" className="flex-1">
+                  <div className="mobile-stack flex w-full flex-wrap gap-2">
+                    <Button asChild variant="outline" size="sm" className="touch-target flex-1">
                       <Link href={`/products/${product.id}`}>View</Link>
                     </Button>
-                    <Button size="sm" className="flex-1">
+                    <Button size="sm" className="touch-target flex-1">
                       Add to Cart
                     </Button>
                   </div>
@@ -263,8 +263,8 @@ export default function ProductsPage() {
 
           {/* Pagination */}
           <div className="mt-8 flex justify-center">
-            <div className="flex space-x-1">
-              <Button variant="outline" size="sm" disabled>
+            <div className="mobile-stack flex flex-wrap gap-1">
+              <Button className="touch-target" variant="outline" size="sm" disabled>
                 Previous
               </Button>
               {[1, 2, 3, 4, 5].map((page) => (
@@ -272,12 +272,12 @@ export default function ProductsPage() {
                   key={page}
                   variant={page === 1 ? "default" : "outline"}
                   size="sm"
-                  className="w-9"
+                  className="touch-target w-9"
                 >
                   {page}
                 </Button>
               ))}
-              <Button variant="outline" size="sm">
+              <Button className="touch-target" variant="outline" size="sm">
                 Next
               </Button>
             </div>

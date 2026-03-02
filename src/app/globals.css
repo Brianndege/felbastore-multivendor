@@ -63,7 +63,27 @@
   * {
     @apply border-border;
   }
+
+  img {
+    @apply max-w-full h-auto;
+  }
+
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  .table-scroll {
+    @apply w-full overflow-x-auto;
+  }
+
+  .mobile-stack > * {
+    @apply w-full sm:w-auto;
   }
 }
