@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,7 +118,7 @@ export default function MpesaPaymentForm({
   };
 
   // Check payment status
-  const checkPaymentStatus = async () => {
+  const checkPaymentStatus = useCallback(async () => {
     if (!checkoutRequestId) return;
 
     try {
@@ -147,7 +147,7 @@ export default function MpesaPaymentForm({
     } catch (error) {
       console.error("Error checking payment status:", error);
     }
-  };
+  }, [checkoutRequestId, onSuccess]);
 
   // Timer effect for checking payment status
   useEffect(() => {
@@ -174,7 +174,7 @@ export default function MpesaPaymentForm({
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [stage, checkoutRequestId]);
+  }, [stage, checkPaymentStatus]);
 
   // Timer display effect
   useEffect(() => {

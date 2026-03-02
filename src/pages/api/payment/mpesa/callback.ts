@@ -1,24 +1,29 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { MPesaPaymentProvider } from "@/lib/payments/mpesa-provider";
+import { logger } from "@/lib/logger";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).end();
   }
 
-  console.log("[MPesa Callback] Received callback");
+  logger.info("[MPesa Callback] Received callback");
 
   // This should be secured with webhook signing verification in production
   try {
     const callbackData = req.body;
-    console.log("[MPesa Callback] Data received:", JSON.stringify(callbackData));
+    logger.info("[MPesa Callback] Data received:", JSON.stringify(callbackData));
 
     // Process the callback with the M-Pesa provider
+    if (!MPesaPaymentProvider.handleCallback) {
+      return res.status(500).json({ error: "M-Pesa callback handler is not configured" });
+    }
+
     const paymentResult = await MPesaPaymentProvider.handleCallback(callbackData);
 
     if (!paymentResult.paymentId) {
-      console.error("[MPesa Callback] No payment ID in response");
+      logger.error("[MPesa Callback] No payment ID in response");
       return res.status(400).json({ error: "Invalid callback data" });
     }
 
@@ -28,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     if (!order) {
-      console.warn(`[MPesa Callback] No order found for payment ID ${paymentResult.paymentId}`);
+      logger.warn(`[MPesa Callback] No order found for payment ID ${paymentResult.paymentId}`);
       return res.status(200).json({ received: true, status: "no-order-found" });
     }
 
@@ -112,7 +117,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         });
       });
 
-      console.log(`[MPesa Callback] Successfully processed payment for order ${order.id}`);
+      logger.info(`[MPesa Callback] Successfully processed payment for order ${order.id}`);
     } else {
       // Payment failed
       await prisma.order.update({
@@ -138,13 +143,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       });
 
-      console.log(`[MPesa Callback] Payment failed for order ${order.id}: ${paymentResult.message}`);
+      logger.info(`[MPesa Callback] Payment failed for order ${order.id}: ${paymentResult.message}`);
     }
 
     // Always return 200 OK to MPesa so they don't retry
     return res.status(200).json({ received: true, success: paymentResult.success });
   } catch (error) {
-    console.error("[MPesa Callback] Error processing callback:", error);
+    logger.error("[MPesa Callback] Error processing callback:", error);
 
     // Always return 200 to MPesa (even for errors) to prevent retries
     return res.status(200).json({

@@ -13,7 +13,7 @@ export default function LoginSuccessPage() {
           <Link href="/">Go to Home</Link>
         </Button>
         <Button asChild variant="outline" className="text-[#e16b22] border-[#e16b22] hover:bg-[#e16b22]/10">
-          <Link href="/account">Go to Dashboard</Link>
+          <Link href="/orders">Go to Dashboard</Link>
         </Button>
       </div>
     </div>

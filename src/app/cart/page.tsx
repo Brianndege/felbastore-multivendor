@@ -46,7 +46,7 @@ export default function CartPage() {
               <div className="flex-1">
                 <h3 className="font-semibold">{item.product.name}</h3>
                 <div className="text-xs text-gray-500">by {item.product.vendor?.storeName || item.product.vendor?.name}</div>
-                <div className="font-medium text-violet-600 mt-1">${typeof item.product.price === "number" ? item.product.price.toFixed(2) : parseFloat(item.product.price.toString()).toFixed(2)}</div>
+                <div className="font-medium text-violet-600 mt-1">${Number(item.product.price).toFixed(2)}</div>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))} disabled={item.quantity <= 1}>-</Button>

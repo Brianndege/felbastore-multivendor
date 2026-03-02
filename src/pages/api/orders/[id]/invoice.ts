@@ -322,7 +322,7 @@ function generateHtmlInvoice(invoice: any): string {
               </tr>
             </thead>
             <tbody>
-              ${invoice.items.map(item => `
+              ${invoice.items.map((item: (typeof invoice.items)[number]) => `
                 <tr>
                   <td>${item.name}</td>
                   <td>${item.sku}</td>

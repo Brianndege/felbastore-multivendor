@@ -1,8 +1,13 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
+import { enforceCsrfOrigin } from "@/lib/csrf";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
+
+  if (!enforceCsrfOrigin(req, res)) {
+    return;
+  }
 
   const { token, userType } = req.body;
 

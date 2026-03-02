@@ -1,0 +1,61 @@
+name: Release Readiness
+
+on:
+  workflow_dispatch:
+
+jobs:
+  release-readiness:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate required secrets
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INVENTORY_SCAN_JOB_KEY: ${{ secrets.INVENTORY_SCAN_JOB_KEY }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL secret is missing"
+            exit 1
+          fi
+
+          if [ -z "$INVENTORY_SCAN_JOB_KEY" ]; then
+            echo "INVENTORY_SCAN_JOB_KEY secret is missing"
+            exit 1
+          fi
+
+      - name: Run release readiness checks
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INVENTORY_SCAN_JOB_KEY: ${{ secrets.INVENTORY_SCAN_JOB_KEY }}
+          INVENTORY_SCAN_LOOKBACK_HOURS: ${{ secrets.INVENTORY_SCAN_LOOKBACK_HOURS }}
+          INVENTORY_SCAN_MAX_PRODUCTS: ${{ secrets.INVENTORY_SCAN_MAX_PRODUCTS }}
+          INVENTORY_SCAN_REQUEST_TIMEOUT_MS: ${{ secrets.INVENTORY_SCAN_REQUEST_TIMEOUT_MS }}
+          GOVERNANCE_REPORT_PATH: artifacts/governance-required-checks.md
+        run: npm run verify:release-readiness
+
+      - name: Upload governance required checks artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-required-checks
+          path: artifacts/governance-required-checks.md
+          if-no-files-found: ignore
+
+      - name: Notify Slack on failure
+        if: failure() && secrets.INVENTORY_SCAN_SLACK_WEBHOOK_URL != ''
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook_url: ${{ secrets.INVENTORY_SCAN_SLACK_WEBHOOK_URL }}
+          message: "❌ Release readiness checks failed for ${{ github.repository }} on ref ${{ github.ref_name }}. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

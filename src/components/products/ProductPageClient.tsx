@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -51,23 +52,29 @@ export default function ProductPageClient({ product, relatedProducts }: ProductP
       <div className="grid gap-8 md:grid-cols-2">
         {/* Product Images */}
         <div className="space-y-4">
-          <div className="overflow-hidden rounded-lg border">
-            <img
+          <div className="relative overflow-hidden rounded-lg border aspect-square">
+            <Image
               src={product.image}
               alt={product.name}
-              className="h-full w-full object-cover"
+              fill
+              className="object-cover"
+              sizes="(max-width: 768px) 100vw, 50vw"
+              priority
             />
           </div>
           <div className="grid grid-cols-4 gap-2">
             {[1, 2, 3, 4].map((i) => (
               <div
                 key={`thumb-${i}`}
-                className={`cursor-pointer overflow-hidden rounded-md border ${i === 1 ? 'border-violet-500 ring-2 ring-violet-500/20' : ''}`}
+                className={`relative cursor-pointer overflow-hidden rounded-md border aspect-square ${i === 1 ? 'border-violet-500 ring-2 ring-violet-500/20' : ''}`}
               >
-                <img
+                <Image
                   src={product.image}
                   alt={`Product view ${i}`}
-                  className="aspect-square h-full w-full object-cover"
+                  fill
+                  className="object-cover"
+                  sizes="(max-width: 768px) 25vw, 10vw"
+                  loading="lazy"
                 />
               </div>
             ))}

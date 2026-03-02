@@ -15,28 +15,44 @@ interface PaymentMethod {
 interface PaymentMethodSelectorProps {
   onSelect: (method: string) => void;
   selected: string;
+  stripeAvailable?: boolean;
+  mpesaAvailable?: boolean;
+  availableMethods?: string[];
 }
 
 export default function PaymentMethodSelector({
   onSelect,
   selected,
+  stripeAvailable = true,
+  mpesaAvailable = false,
+  availableMethods,
 }: PaymentMethodSelectorProps) {
   const paymentMethods: PaymentMethod[] = [
+    {
+      id: "pod",
+      name: "Pay on Delivery",
+      description: "Pay when your order is delivered. This option is auto-approved by default.",
+      isAvailable: true,
+    },
     {
       id: "stripe",
       name: "Credit/Debit Card",
       description: "Pay securely with Visa, Mastercard, or other major credit cards.",
       logo: "/payment-icons/cards.svg",
-      isAvailable: true,
+      isAvailable: stripeAvailable,
     },
     {
       id: "mpesa",
       name: "M-Pesa",
-      description: "Pay directly with M-Pesa mobile money.",
+      description: mpesaAvailable ? "Pay directly with M-Pesa mobile money." : "Temporarily unavailable while credentials are being finalized.",
       logo: "/payment-icons/mpesa.svg",
-      isAvailable: true,
+      isAvailable: mpesaAvailable,
     }
   ];
+
+  const filteredPaymentMethods = Array.isArray(availableMethods) && availableMethods.length > 0
+    ? paymentMethods.filter((method) => availableMethods.includes(method.id))
+    : paymentMethods;
 
   const handleSelect = (methodId: string) => {
     const method = paymentMethods.find(m => m.id === methodId);
@@ -51,7 +67,7 @@ export default function PaymentMethodSelector({
       onValueChange={handleSelect}
       className="space-y-3"
     >
-      {paymentMethods.map((method) => (
+      {filteredPaymentMethods.map((method) => (
         <div
           key={method.id}
           className={`flex items-center space-x-3 rounded-lg border p-4 transition-colors ${
@@ -107,6 +123,11 @@ export default function PaymentMethodSelector({
                 {method.id === "mpesa" && (
                   <div className="bg-green-500 text-white text-xs font-bold px-2 py-1 rounded flex items-center justify-center">
                     M-PESA
+                  </div>
+                )}
+                {method.id === "pod" && (
+                  <div className="bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded flex items-center justify-center">
+                    POD
                   </div>
                 )}
               </div>

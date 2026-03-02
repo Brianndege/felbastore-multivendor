@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]"; // adjust path if needed
 import { prisma } from "@/lib/prisma";
+import { enforceCsrfOrigin } from "@/lib/csrf";
 
 export default async function handler(
   req: NextApiRequest,
@@ -35,6 +36,10 @@ export default async function handler(
     }
 
     if (req.method === "POST") {
+      if (!enforceCsrfOrigin(req, res)) {
+        return;
+      }
+
       const { productId, quantity = 1 } = req.body;
 
       if (!productId) {
@@ -48,7 +53,7 @@ export default async function handler(
       }
 
       const product = await prisma.product.findFirst({
-        where: { id: productId, status: "active" },
+        where: { id: productId, status: "active", isApproved: true },
       });
 
       if (!product) {

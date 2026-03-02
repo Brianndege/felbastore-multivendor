@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
 import { Elements } from "@stripe/react-stripe-js";
-import { getStripe } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe-client";
 import { STRIPE_APPEARANCE } from "@/lib/payments/stripe-provider";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import MpesaPaymentForm from "@/components/checkout/MpesaPaymentForm";
 import PaymentMethodSelector from "@/components/checkout/PaymentMethodSelector";
 
 const stripePromise = getStripe();
+const mpesaEnabled = process.env.NEXT_PUBLIC_ENABLE_MPESA === "true";
 
 // Content component that uses params
 function PaymentPageContent() {
@@ -24,7 +25,7 @@ function PaymentPageContent() {
 
   // Get the orderId from the URL without using useParams
   const orderId = typeof window !== 'undefined'
-    ? window.location.pathname.split('/').pop()
+    ? (window.location.pathname.split('/').pop() ?? "")
     : '';
 
   const [order, setOrder] = useState<any>(null);
@@ -165,6 +166,8 @@ function PaymentPageContent() {
                 <PaymentMethodSelector
                   onSelect={handlePaymentMethodChange}
                   selected={paymentMethod}
+                  stripeAvailable={true}
+                  mpesaAvailable={mpesaEnabled}
                 />
 
                 {/* Payment Forms */}
@@ -192,7 +195,7 @@ function PaymentPageContent() {
                     </div>
                   ) : null}
 
-                  {paymentMethod === "mpesa" && (
+                  {paymentMethod === "mpesa" && mpesaEnabled && (
                     <MpesaPaymentForm
                       shippingAddress={order.shippingAddress}
                       billingAddress={order.billingAddress}

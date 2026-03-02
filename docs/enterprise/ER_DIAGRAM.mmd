@@ -1,0 +1,34 @@
+erDiagram
+  Tenant ||--o{ User : has
+  Tenant ||--o{ Vendor : has
+  Tenant ||--o{ Product : has
+  Tenant ||--o{ Order : has
+  Tenant ||--o{ Event : tracks
+
+  User ||--o{ UserRole : assigned
+  User ||--o{ Session : owns
+  User ||--o{ OAuthAccount : links
+  User ||--o{ MfaMethod : secures
+  User ||--o{ LoyaltyAccount : earns
+  User ||--o{ ReferralCode : owns
+
+  Vendor ||--o{ Product : lists
+  Vendor ||--o{ Payout : receives
+  Vendor ||--o{ VendorMember : includes
+  Vendor ||--o{ VendorKycDoc : verifies
+
+  Product ||--o{ ProductVariant : has
+  ProductVariant ||--|| Inventory : tracks
+  Product ||--o{ CartItem : added
+  Product ||--o{ OrderItem : sold
+
+  User ||--o{ Cart : owns
+  Cart ||--o{ CartItem : contains
+
+  User ||--o{ Order : places
+  Order ||--o{ OrderItem : contains
+  Order ||--o{ PaymentIntent : pays
+  Order ||--o{ Refund : may_refund
+  Order ||--o{ Dispute : may_dispute
+
+  ReferralCode ||--o{ ReferralEvent : converts

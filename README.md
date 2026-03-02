@@ -84,6 +84,126 @@ npm run dev
 
 6. Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+### Windows Startup Note
+
+If your workspace is in OneDrive and `.next/trace` causes `EPERM`, this project uses `.next-runtime` by default on Windows. You can override it with:
+
+```env
+NEXT_DIST_DIR=".next-runtime"
+```
+
+The default startup scripts also auto-fallback to the next available port when `3000` is busy:
+
+```bash
+npm run dev
+npm run start
+```
+
+`npm run start` also auto-runs `next build` if a production build is missing.
+
+If you need strict fixed-port behavior, use:
+
+```bash
+npm run dev:strict
+npm run start:strict
+```
+
+Quick startup smoke check (build + start + HTTP probe + shutdown):
+
+```bash
+npm run start:smoke
+```
+
+Quick development smoke check (dev start + HTTP probe + shutdown):
+
+```bash
+npm run dev:smoke
+```
+
+Run both smoke checks sequentially (dev then start):
+
+```bash
+npm run smoke:all
+```
+
+### Admin Access (Hidden Login)
+
+- Public login page (`/auth/login`) shows only Customer and Vendor options.
+- Admin login is available at a separate route: `/auth/admin-login`.
+- Set `ADMIN_LOGIN_KEY` to require a secret key for the admin login page.
+- When `ADMIN_LOGIN_KEY` is set, open admin login via one of these methods:
+   - `/auth/admin-login?k=YOUR_ADMIN_LOGIN_KEY` (first request)
+   - or header `x-admin-access-key: YOUR_ADMIN_LOGIN_KEY`
+- With query key flow, middleware sets a short-lived HttpOnly cookie and redirects to clean `/auth/admin-login` (without `k` in URL).
+- In production, if `ADMIN_LOGIN_KEY` is not set, `/auth/admin-login` is disabled and returns `404`.
+
+Create or update the default admin account:
+
+```bash
+npm run admin:ensure
+```
+
+Optional environment variables for admin seeding:
+
+```env
+ADMIN_DEFAULT_EMAIL="admin@felbastore.local"
+ADMIN_DEFAULT_PASSWORD="Admin@12345!"
+ADMIN_DEFAULT_NAME="Platform Admin"
+```
+
+Optional environment variable for admin login route protection:
+
+```env
+ADMIN_LOGIN_KEY="replace-with-strong-random-value"
+```
+
+Generate strong secrets quickly:
+
+```bash
+npm run secrets:generate
+```
+
+Use generated values for `NEXTAUTH_SECRET`, `ADMIN_LOGIN_KEY`, and (optionally) `ADMIN_DEFAULT_PASSWORD`.
+
+### Daraja (M-Pesa) Sandbox Testing
+
+1. Set Daraja values in `.env.local` (see `.env.example`).
+2. Test OAuth connectivity:
+
+```bash
+npm run test:daraja
+```
+
+`test:daraja` only needs `MPESA_CONSUMER_KEY` and `MPESA_CONSUMER_SECRET`.
+
+3. Trigger a real sandbox STK push:
+
+```bash
+npm run test:daraja:stk
+```
+
+`test:daraja:stk` also requires `MPESA_PASSKEY`, `MPESA_SHORTCODE`, and `MPESA_CALLBACK_URL`.
+
+Optional: pass phone and amount directly:
+
+```bash
+npm run test:daraja:stk -- 2547XXXXXXXX 1
+```
+
+### Stripe Card Testing
+
+Test Stripe API connectivity and PaymentIntent creation:
+
+```bash
+npm run test:stripe
+```
+
+For card-first checkout while M-Pesa is being finalized, set:
+
+```env
+NEXT_PUBLIC_ENABLE_MPESA="false"
+```
+
 ### Deployment
 
 #### Deploy to Netlify
@@ -144,6 +264,119 @@ The project includes several documentation files:
 - **AUTHENTICATION_TESTING.md**: Guide for testing authentication flows
 - **TECHNICAL_AUDIT.md**: Technical audit of the platform with recommendations
 - **DATABASE_SETUP.md**: Instructions for database setup and configuration
+
+## CI Workflows
+
+- **Hourly inventory scan**: [.github/workflows/inventory-scan.yml](.github/workflows/inventory-scan.yml)
+   - Trigger: hourly (`cron`) + manual
+   - Purpose: run inventory alert scan with retry/backoff
+   - Optional alerting: Slack via `INVENTORY_SCAN_SLACK_WEBHOOK_URL`
+
+- **On-demand dedupe regression**: [.github/workflows/inventory-dedupe-check.yml](.github/workflows/inventory-dedupe-check.yml)
+   - Trigger: manual (`workflow_dispatch`)
+   - Purpose: verify second immediate scan creates zero new alerts
+   - Guardrails: rejects localhost/non-HTTP(S) `APP_URL`, runs `jobs:inventory-scan:validate` preflight
+
+- **Inventory ops smoke gate**: [.github/workflows/inventory-ops-smoke-gate.yml](.github/workflows/inventory-ops-smoke-gate.yml)
+   - Trigger: manual (`workflow_dispatch`)
+   - Purpose: run `verify:inventory-ops` against deployed `APP_URL` as an end-to-end gate
+   - Guardrails: rejects localhost/non-HTTP(S) `APP_URL`, runs `jobs:inventory-scan:validate` preflight
+
+- **Inventory env validate**: [.github/workflows/inventory-env-validate.yml](.github/workflows/inventory-env-validate.yml)
+   - Trigger: pull request changes to inventory scan runner/config + manual (`workflow_dispatch`)
+   - Purpose: fail fast on invalid scan env configuration without network calls
+
+- **Release evidence PR checker**: [.github/workflows/release-evidence-pr-check.yml](.github/workflows/release-evidence-pr-check.yml)
+   - Trigger: pull request updates
+   - Purpose: comments on release PRs and fails the check when required workflow run links are missing
+
+- **Governance consistency**: [.github/workflows/governance-consistency.yml](.github/workflows/governance-consistency.yml)
+   - Trigger: pull request changes to release-gate docs/workflows + manual (`workflow_dispatch`)
+   - Purpose: verifies required workflow job IDs and required-check documentation stay aligned
+
+- **Release readiness**: [.github/workflows/release-readiness.yml](.github/workflows/release-readiness.yml)
+   - Trigger: manual (`workflow_dispatch`)
+   - Purpose: runs governance + inventory ops checks as a single release go/no-go verification
+
+- **Reusable Slack notifier action**: [.github/actions/notify-slack/action.yml](.github/actions/notify-slack/action.yml)
+   - Docs: [.github/actions/notify-slack/README.md](.github/actions/notify-slack/README.md)
+
+Common repository secrets used by these workflows:
+
+- `APP_URL`
+- `INVENTORY_SCAN_JOB_KEY`
+- `INVENTORY_SCAN_SLACK_WEBHOOK_URL` (optional)
+
+## Operations Checklist
+
+### Pre-Deploy
+
+- Confirm env vars are configured:
+   - `APP_URL`
+   - `INVENTORY_SCAN_JOB_KEY`
+   - `INVENTORY_SCAN_LOOKBACK_HOURS` (optional)
+   - `INVENTORY_SCAN_MAX_PRODUCTS` (optional)
+   - `INVENTORY_SCAN_REQUEST_TIMEOUT_MS` (optional, default `20000`)
+   - `NEXT_PUBLIC_ADMIN_LIVE_UNSTABLE_THRESHOLD` (optional)
+- Confirm GitHub secrets are set for workflow execution.
+- Run one-command local verification:
+   - `npm run verify:inventory-ops` (runs env preflight + connectivity diagnostics + scan + dedupe)
+- Run one-command release readiness verification:
+   - `npm run verify:release-readiness`
+- Run env preflight validation (no network call):
+   - `npm run jobs:inventory-scan:validate`
+- Run connectivity diagnostics (non-destructive):
+   - `npm run diagnose:inventory-scan`
+- Run safe scan chain (preflight + diagnostics + scan):
+   - `npm run jobs:inventory-scan:safe`
+- Optional individual checks:
+   - `npm run jobs:inventory-scan:safe` (preferred)
+   - `npm run jobs:inventory-scan` (raw scan only)
+   - `npm run test:inventory-dedupe`
+
+### Post-Deploy
+
+- Trigger manual run of `.github/workflows/inventory-scan.yml`.
+- Verify workflow returns `ok: true` and produces expected scan metrics.
+- Trigger manual run of `.github/workflows/inventory-dedupe-check.yml`.
+- Confirm dedupe check passes (second immediate scan creates `0` alerts).
+- Verify admin dashboard live panel updates:
+   - latest scan summary displayed
+   - reconnect counters visible
+   - unstable badge behavior matches configured threshold
+
+### Release Gate (Required Before Production Tag)
+
+- Optional consolidated run: trigger `.github/workflows/release-readiness.yml`.
+- Trigger manual run of `.github/workflows/inventory-ops-smoke-gate.yml`.
+- Proceed with production release tag only if the smoke gate workflow is green.
+- If the gate fails, resolve inventory automation issues first (do not tag release).
+
+GitHub settings checklist:
+
+- Enable branch protection on default branch.
+- Require status checks before merge.
+- Include these checks in release process:
+   - `governance-consistency / governance-consistency`
+   - `inventory-env-validate / inventory-env-validate`
+   - `inventory-ops-smoke-gate / inventory-ops-smoke-gate`
+   - `inventory-dedupe-check / inventory-dedupe-check`
+   - `check-release-evidence / check-release-evidence`
+
+Detailed click-by-click setup: [docs/enterprise/GITHUB_REPO_SETTINGS_RUNBOOK.md](docs/enterprise/GITHUB_REPO_SETTINGS_RUNBOOK.md)
+Release evidence template: [docs/enterprise/RELEASE_EVIDENCE_TEMPLATE.md](docs/enterprise/RELEASE_EVIDENCE_TEMPLATE.md)
+GitHub release draft template: [.github/RELEASE_TEMPLATE.md](.github/RELEASE_TEMPLATE.md)
+
+### Incident Triage (Quick)
+
+- If scan job fails with `fetch failed`, run `npm run jobs:inventory-scan:validate` first to confirm env format.
+- Run `npm run diagnose:inventory-scan` to verify APP_URL and endpoint reachability before retrying scan jobs.
+- Prefer `npm run jobs:inventory-scan:safe` for manual runs (preflight + diagnostics + scan).
+- If `APP_URL` is `http://localhost:3000`, ensure the app is running before scan (`npm run dev` or `npm run start`).
+- For CI/GitHub workflows, `APP_URL` must be a reachable deployed HTTPS URL (never localhost).
+- If unauthorized, rotate and re-sync `INVENTORY_SCAN_JOB_KEY` between env + GitHub secrets.
+- If alerts are noisy, increase `lookbackHours` or reduce run cadence.
+- If no alerts are created unexpectedly, inspect product inventory thresholds and `inventory <= lowStockThreshold` conditions.
 
 ## Payment System Architecture
 

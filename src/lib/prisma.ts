@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient | undefined };
 
@@ -13,14 +14,14 @@ export const prisma =
 
 // Test connection on initialization
 if (!globalForPrisma.prisma) {
-  console.log('[Prisma] Initializing Prisma Client...');
+  logger.info('[Prisma] Initializing Prisma Client...');
   prisma.$connect()
     .then(() => {
-      console.log('[Prisma] Database connection established successfully');
+      logger.info('[Prisma] Database connection established successfully');
     })
     .catch((error) => {
-      console.error('[Prisma] Failed to connect to database:', error);
-      console.error('[Prisma] Please check your DATABASE_URL in .env file');
+      logger.error('[Prisma] Failed to connect to database:', error);
+      logger.error('[Prisma] Please check your DATABASE_URL in .env file');
     });
 }
 

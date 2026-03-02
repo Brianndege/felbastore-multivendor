@@ -33,7 +33,7 @@ export const generateIdempotencyKey = (orderId: string, paymentMethod: string): 
 
 // Calculate the total amount from cart items with validation
 export const calculateOrderAmount = (
-  items: Array<{product: {price: number | string}, quantity: number}>,
+  items: Array<{product: {price: unknown}, quantity: number}>,
   additionalFees: {tax?: number, shipping?: number, discount?: number} = {}
 ): PaymentAmount => {
   // Calculate subtotal
@@ -44,9 +44,7 @@ export const calculateOrderAmount = (
   }
 
   items.forEach(item => {
-    const price = typeof item.product.price === 'number'
-      ? item.product.price
-      : parseFloat(item.product.price.toString());
+    const price = Number(item.product.price);
 
     if (isNaN(price)) {
       throw new Error(`Invalid price for product: ${JSON.stringify(item.product)}`);

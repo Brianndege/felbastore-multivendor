@@ -2,121 +2,84 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-
-// Mock categories data
-const CATEGORIES = {
-  "electronics": {
-    id: "electronics",
-    name: "Electronics",
-    icon: "📱",
-    description: "Smartphones, laptops, headphones, and tech gadgets",
-    image: "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=1200&auto=format&fit=crop&q=60"
-  },
-  "fashion": {
-    id: "fashion",
-    name: "Fashion",
-    icon: "👕",
-    description: "Clothing, shoes, accessories, and style essentials",
-    image: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=1200&auto=format&fit=crop&q=60"
-  },
-  "home-garden": {
-    id: "home-garden",
-    name: "Home & Garden",
-    icon: "🏡",
-    description: "Furniture, decor, gardening tools, and home essentials",
-    image: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=1200&auto=format&fit=crop&q=60"
-  },
-  "beauty-health": {
-    id: "beauty-health",
-    name: "Beauty & Health",
-    icon: "💄",
-    description: "Skincare, makeup, wellness, and health products",
-    image: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=1200&auto=format&fit=crop&q=60"
-  }
-};
-
-// Mock products for each category
-const CATEGORY_PRODUCTS = {
-  "electronics": [
-    {
-      id: "1",
-      name: "Premium Bluetooth Headphones",
-      price: 149.99,
-      image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&auto=format&fit=crop&q=60",
-      vendor: "AudioTech",
-      rating: 4.7,
-    },
-    {
-      id: "4",
-      name: "Smart Home Controller",
-      price: 129.99,
-      image: "https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60",
-      vendor: "TechInnovate",
-      rating: 4.2,
-    },
-    {
-      id: "7",
-      name: "Portable Bluetooth Speaker",
-      price: 79.99,
-      image: "https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=500&auto=format&fit=crop&q=60",
-      vendor: "AudioTech",
-      rating: 4.5,
-    }
-  ],
-  "fashion": [
-    {
-      id: "2",
-      name: "Handcrafted Wooden Watch",
-      price: 89.99,
-      image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60",
-      vendor: "EcoWear",
-      rating: 4.4,
-    }
-  ],
-  "home-garden": [
-    {
-      id: "5",
-      name: "Stainless Steel Water Bottle",
-      price: 24.99,
-      image: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=500&auto=format&fit=crop&q=60",
-      vendor: "EcoLiving",
-      rating: 4.6,
-    },
-    {
-      id: "6",
-      name: "Handmade Ceramic Mug Set",
-      price: 39.99,
-      image: "https://images.unsplash.com/photo-1595185584522-061e4a462262?w=500&auto=format&fit=crop&q=60",
-      vendor: "ArtisanCrafts",
-      rating: 4.8,
-    }
-  ],
-  "beauty-health": [
-    {
-      id: "3",
-      name: "Organic Face Moisturizer",
-      price: 34.99,
-      image: "https://images.unsplash.com/photo-1556227834-09f1de7a7d14?w=500&auto=format&fit=crop&q=60",
-      vendor: "NatureCare",
-      rating: 4.9,
-    }
-  ]
-};
+import { prisma } from "@/lib/prisma";
+import {
+  DEFAULT_CATEGORIES,
+  getCategoryMetaBySlug,
+  humanizeCategorySlug,
+  toCategorySlug,
+} from "@/lib/categories";
 
 // Generate static params for build
 export function generateStaticParams() {
-  return Object.keys(CATEGORIES).map((id) => ({
-    id: id,
+  return DEFAULT_CATEGORIES.map((category) => ({
+    id: category.id,
   }));
 }
 
-export default function CategoryPage({ params }: { params: { id: string } }) {
-  const category = CATEGORIES[params.id as keyof typeof CATEGORIES];
-  const products = CATEGORY_PRODUCTS[params.id as keyof typeof CATEGORY_PRODUCTS] || [];
+export default async function CategoryPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  let allProducts: any[] = [];
 
-  if (!category) {
+  try {
+    allProducts = await prisma.product.findMany({
+      where: { status: "active", isApproved: true },
+      select: {
+        id: true,
+        name: true,
+        price: true,
+        currency: true,
+        images: true,
+        category: true,
+        vendor: {
+          select: {
+            storeName: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
+  } catch {
+    allProducts = [];
+  }
+
+  const products = allProducts
+    .filter((product) => toCategorySlug(product.category) === id)
+    .map((product) => ({
+      id: product.id,
+      name: product.name,
+      price: Number(product.price),
+      currency: product.currency || "KES",
+      image: product.images?.[0] || "https://images.unsplash.com/photo-1557821552-17105176677c?w=500&auto=format&fit=crop&q=60",
+      vendor: product.vendor.storeName || product.vendor.name,
+    }));
+
+  const knownCategory = getCategoryMetaBySlug(id);
+  const category = knownCategory ?? {
+    id,
+    name: humanizeCategorySlug(id),
+    icon: "📦",
+    description: `Browse products in ${humanizeCategorySlug(id)}`,
+    image: "https://images.unsplash.com/photo-1557821552-17105176677c?w=1200&auto=format&fit=crop&q=60",
+  };
+
+  if (!knownCategory && products.length === 0) {
     notFound();
   }
+
+  const formatPrice = (price: number, currency: string) => {
+    try {
+      return new Intl.NumberFormat("en-KE", {
+        style: "currency",
+        currency: currency || "KES",
+      }).format(price);
+    } catch {
+      return `${currency || "KES"} ${price.toFixed(2)}`;
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -159,11 +122,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
             {products.length} {products.length === 1 ? 'Product' : 'Products'} in {category.name}
           </h2>
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">Price: Low to High</Button>
-          <Button variant="outline" size="sm">Most Popular</Button>
-          <Button variant="outline" size="sm">Newest</Button>
-        </div>
+        <div className="flex gap-2" />
       </div>
 
       {/* Products Grid */}
@@ -179,15 +138,9 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
                 />
               </div>
               <CardContent className="p-4">
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="flex items-center text-xs text-yellow-400">
-                    <span>{product.rating}</span>
-                    <span className="ml-1">★</span>
-                  </div>
-                </div>
                 <h3 className="mb-1 line-clamp-1 font-medium">{product.name}</h3>
                 <div className="flex items-center justify-between">
-                  <p className="font-bold text-violet-600">${product.price.toFixed(2)}</p>
+                  <p className="font-bold text-violet-600">{formatPrice(product.price, product.currency)}</p>
                   <span className="text-xs text-gray-500">by {product.vendor}</span>
                 </div>
               </CardContent>
@@ -221,7 +174,7 @@ export default function CategoryPage({ params }: { params: { id: string } }) {
       <div className="mt-16">
         <h2 className="text-2xl font-bold mb-6">Related Categories</h2>
         <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-          {Object.values(CATEGORIES)
+          {DEFAULT_CATEGORIES
             .filter(cat => cat.id !== category.id)
             .slice(0, 4)
             .map((relatedCategory) => (

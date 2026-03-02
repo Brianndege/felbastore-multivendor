@@ -1,0 +1,78 @@
+name: Inventory Alert Scan
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+jobs:
+  run-inventory-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger internal inventory scan endpoint (with retries)
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INVENTORY_SCAN_JOB_KEY: ${{ secrets.INVENTORY_SCAN_JOB_KEY }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL secret is missing"
+            exit 1
+          fi
+
+          if [ -z "$INVENTORY_SCAN_JOB_KEY" ]; then
+            echo "INVENTORY_SCAN_JOB_KEY secret is missing"
+            exit 1
+          fi
+
+          if [[ ! "$APP_URL" =~ ^https?:// ]]; then
+            echo "APP_URL must start with http:// or https://"
+            exit 1
+          fi
+
+          if [[ "$APP_URL" =~ localhost|127\.0\.0\.1 ]]; then
+            echo "APP_URL must be a publicly reachable URL for GitHub-hosted runners (localhost is not allowed)"
+            exit 1
+          fi
+
+          ATTEMPT=1
+          MAX_ATTEMPTS=3
+          BACKOFF_SECONDS=5
+
+          while [ "$ATTEMPT" -le "$MAX_ATTEMPTS" ]; do
+            echo "Running inventory scan attempt $ATTEMPT/$MAX_ATTEMPTS"
+
+            RESPONSE=$(curl -sS -w "\n%{http_code}" -X POST "$APP_URL/api/internal/jobs/inventory-alert-scan" \
+              -H "Content-Type: application/json" \
+              -H "x-job-key: $INVENTORY_SCAN_JOB_KEY" \
+              -d '{"lookbackHours":24,"maxProducts":250}')
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+            BODY=$(echo "$RESPONSE" | sed '$d')
+
+            echo "Response status: $HTTP_CODE"
+            echo "Response body: $BODY"
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              echo "Inventory scan succeeded on attempt $ATTEMPT"
+              exit 0
+            fi
+
+            if [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; then
+              echo "Attempt $ATTEMPT failed. Retrying in $BACKOFF_SECONDS seconds..."
+              sleep "$BACKOFF_SECONDS"
+              BACKOFF_SECONDS=$((BACKOFF_SECONDS * 2))
+            fi
+
+            ATTEMPT=$((ATTEMPT + 1))
+          done
+
+          echo "Inventory scan failed after $MAX_ATTEMPTS attempts"
+          exit 1
+
+      - name: Notify Slack on failure
+        if: failure() && secrets.INVENTORY_SCAN_SLACK_WEBHOOK_URL != ''
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook_url: ${{ secrets.INVENTORY_SCAN_SLACK_WEBHOOK_URL }}
+          message: "❌ Inventory scan job failed for ${{ github.repository }} on ref ${{ github.ref_name }}. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

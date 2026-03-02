@@ -1,12 +1,15 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import type { Metadata } from "next";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import ProductPageClient from "@/components/products/ProductPageClient";
+
+const ProductPageClient = dynamic(() => import("@/components/products/ProductPageClient"));
 
 // Mock data for products - In a real app, this would come from your database
 const PRODUCTS = [
@@ -99,9 +102,52 @@ export function generateStaticParams() {
   }));
 }
 
-export default function ProductPage({ params }: { params: { id: string } }) {
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const product = PRODUCTS.find((item) => item.id === id);
+
+  if (!product) {
+    return {
+      title: "Product Not Found",
+      description: "The requested product could not be found.",
+      robots: {
+        index: false,
+        follow: false,
+      },
+    };
+  }
+
+  return {
+    title: product.name,
+    description: product.description,
+    alternates: {
+      canonical: `/products/${product.id}`,
+    },
+    openGraph: {
+      title: product.name,
+      description: product.description,
+      type: "website",
+      url: `/products/${product.id}`,
+      images: [
+        {
+          url: product.image,
+          alt: product.name,
+        },
+      ],
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: product.name,
+      description: product.description,
+      images: [product.image],
+    },
+  };
+}
+
+export default async function ProductPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   // In a real app, this would fetch from your database or API
-  const product = PRODUCTS.find((p) => p.id === params.id);
+  const product = PRODUCTS.find((p) => p.id === id);
 
   if (!product) {
     notFound();

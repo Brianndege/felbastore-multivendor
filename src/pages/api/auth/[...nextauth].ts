@@ -4,22 +4,34 @@ import GoogleProvider from "next-auth/providers/google";
 import FacebookProvider from "next-auth/providers/facebook";
 import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 import bcrypt from "bcryptjs";
+
+const providers: NextAuthOptions["providers"] = [];
+
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  providers.push(
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    })
+  );
+}
+
+if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
+  providers.push(
+    FacebookProvider({
+      clientId: process.env.FACEBOOK_CLIENT_ID,
+      clientSecret: process.env.FACEBOOK_CLIENT_SECRET,
+    })
+  );
+}
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
 
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-    }),
-
-    FacebookProvider({
-      clientId: process.env.FACEBOOK_CLIENT_ID!,
-      clientSecret: process.env.FACEBOOK_CLIENT_SECRET!,
-    }),
-
+    ...providers,
     CredentialsProvider({
       name: "credentials",
       credentials: {
@@ -29,7 +41,7 @@ export const authOptions: NextAuthOptions = {
       },
 
       async authorize(credentials) {
-        console.log("[NextAuth] Login attempt started");
+        logger.info("[NextAuth] Login attempt started");
 
         if (!credentials?.email || !credentials?.password || !credentials?.userType) {
           throw new Error("MISSING_CREDENTIALS");
@@ -111,7 +123,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string;   // 🔥 IMPORTANT
         session.user.role = token.role as string;
-        session.user.storeName = token.storeName as string | null;
+        session.user.storeName = (token.storeName as string | null) ?? undefined;
       }
       return session;
     },

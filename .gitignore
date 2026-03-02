@@ -17,6 +17,8 @@ node_modules/
 # Next.js
 /.next/
 .next/
+.next-runtime/
+.next-runtime*/
 /out/
 
 # Production
@@ -60,3 +62,6 @@ src/generated/
 
 # OS
 Thumbs.db
+
+# Local Netlify folder
+.netlify

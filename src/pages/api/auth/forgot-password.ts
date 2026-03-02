@@ -1,10 +1,15 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { sendPasswordResetEmail } from "@/lib/email";
+import { enforceCsrfOrigin } from "@/lib/csrf";
 import crypto from "crypto";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
+
+  if (!enforceCsrfOrigin(req, res)) {
+    return;
+  }
 
   const { email, userType } = req.body;
 
@@ -56,7 +61,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const emailResult = await sendPasswordResetEmail(email, token, userType);
 
     if (!emailResult.success) {
-      console.error("Failed to send reset email:", emailResult.error);
+      console.error("Failed to send reset email");
     }
 
     return res.status(200).json({ message: "If an account with that email exists, we've sent a password reset link." });

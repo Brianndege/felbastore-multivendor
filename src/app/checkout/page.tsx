@@ -1,13 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Elements } from "@stripe/react-stripe-js";
-import { getStripe } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe-client";
 import { STRIPE_APPEARANCE } from "@/lib/payments/stripe-provider";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -19,6 +20,119 @@ import PaymentMethodSelector from "@/components/checkout/PaymentMethodSelector";
 import { toast } from "sonner";
 
 const stripePromise = getStripe();
+const mpesaEnabled = process.env.NEXT_PUBLIC_ENABLE_MPESA === "true";
+
+type EligibilityPaymentOption = {
+  code: string;
+  label: string;
+  requiresApproval: boolean;
+};
+
+type VendorCoverage = {
+  vendorId: string;
+  vendorName?: string;
+  vendorStoreName?: string;
+  eligible: boolean;
+  reason?: string;
+};
+
+type EligibilityResponse = {
+  eligible: boolean;
+  vendorCoverage: VendorCoverage[];
+  paymentOptions: EligibilityPaymentOption[];
+};
+
+type ApiErrorPayload = {
+  error?: string;
+  code?: string;
+  details?: Record<string, any>;
+};
+
+type BlockedVendor = {
+  name: string;
+  reason?: string;
+};
+
+function formatCoverageReason(reason?: string): string {
+  if (!reason) return "Coverage unavailable";
+
+  const reasonMap: Record<string, string> = {
+    OUT_OF_RANGE: "Out of delivery range",
+    NO_ACTIVE_ZONE: "No active delivery zone",
+    MISSING_COORDINATES: "Address coordinates required",
+    CITY_COUNTRY_MISMATCH: "City/country not supported",
+  };
+
+  return reasonMap[reason] || reason.replace(/_/g, " ").toLowerCase();
+}
+
+function getCoverageReasonBadgeVariant(reason?: string): "default" | "destructive" | "outline" | "secondary" {
+  if (!reason) return "outline";
+
+  if (reason === "OUT_OF_RANGE" || reason === "CITY_COUNTRY_MISMATCH") {
+    return "destructive";
+  }
+
+  if (reason === "NO_ACTIVE_ZONE") {
+    return "secondary";
+  }
+
+  return "outline";
+}
+
+function extractBlockedVendors(payload: ApiErrorPayload | null | undefined): BlockedVendor[] {
+  if (!payload || payload.code !== "COVERAGE_OUT_OF_RANGE") {
+    return [];
+  }
+
+  const coverage = payload.details?.vendorCoverage;
+  if (!Array.isArray(coverage)) {
+    return [];
+  }
+
+  return coverage
+    .filter((entry: any) => entry && entry.eligible === false)
+    .map((entry: any) => ({
+      name: entry.vendorStoreName || entry.vendorName || entry.vendorId,
+      reason: entry.reason,
+    }))
+    .filter((entry: BlockedVendor) => Boolean(entry.name));
+}
+
+function getCheckoutErrorMessage(payload: ApiErrorPayload | null | undefined, fallback: string): string {
+  if (!payload) {
+    return fallback;
+  }
+
+  const code = payload.code || "";
+  const details = payload.details || {};
+
+  if (code === "COVERAGE_OUT_OF_RANGE" && Array.isArray(details.vendorCoverage)) {
+    const blockedVendors = details.vendorCoverage
+      .filter((entry: any) => entry && entry.eligible === false)
+      .map((entry: any) => entry.vendorStoreName || entry.vendorName || entry.vendorId)
+      .filter(Boolean);
+
+    if (blockedVendors.length > 0) {
+      return `Delivery is unavailable for vendor(s): ${blockedVendors.join(", ")}. Please update shipping address.`;
+    }
+
+    return "Delivery is unavailable for one or more vendors in your cart.";
+  }
+
+  if (code === "PAYMENT_METHOD_NOT_ALLOWED") {
+    const allowed = Array.isArray(details.allowed) ? details.allowed.join(", ") : "";
+    return allowed
+      ? `Selected payment method is not allowed for this cart. Allowed methods: ${allowed}.`
+      : "Selected payment method is not allowed for this cart.";
+  }
+
+  if (code === "INSUFFICIENT_STOCK") {
+    return payload.error || "One or more cart items are out of stock.";
+  }
+
+  return payload.error || fallback;
+}
 
 export default function CheckoutPage() {
   const { data: session, status } = useSession();
@@ -28,6 +142,10 @@ export default function CheckoutPage() {
   const [orderId, setOrderId] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("stripe");
+  const [isCheckingEligibility, setIsCheckingEligibility] = useState(false);
+  const [eligibility, setEligibility] = useState<EligibilityResponse | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
+  const [blockedVendors, setBlockedVendors] = useState<BlockedVendor[]>([]);
 
   // Address state
   const [shippingAddress, setShippingAddress] = useState({
@@ -76,34 +194,101 @@ export default function CheckoutPage() {
     }
   }, [sameAsShipping, shippingAddress]);
 
-  const createPaymentIntent = async () => {
+  const createPaymentIntent = useCallback(async () => {
     setIsLoading(true);
+    setCheckoutError("");
+    setBlockedVendors([]);
     try {
       const response = await fetch("/api/payment/create-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: {
+            city: shippingAddress.city,
+            country: shippingAddress.country,
+          },
+        }),
       });
 
       if (response.ok) {
         const { clientSecret } = await response.json();
         setClientSecret(clientSecret);
       } else {
-        const errorData = await response.json();
-        toast.error(errorData.error || "Error creating payment intent");
+        const errorData = (await response.json()) as ApiErrorPayload;
+        const message = getCheckoutErrorMessage(errorData, "Error creating payment intent");
+        setCheckoutError(message);
+        setBlockedVendors(extractBlockedVendors(errorData));
+        toast.error(message);
       }
     } catch (error) {
       console.error("Error creating payment intent:", error);
-      toast.error("Failed to initialize payment. Please try again.");
+      const message = "Failed to initialize payment. Please try again.";
+      setCheckoutError(message);
+      toast.error(message);
     } finally {
       setIsLoading(false);
     }
+  }, [shippingAddress.city, shippingAddress.country]);
+
+  const createPodOrder = async () => {
+    setIsLoading(true);
+    setCheckoutError("");
+    setBlockedVendors([]);
+    try {
+      const response = await fetch("/api/orders/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          shippingAddress,
+          billingAddress,
+          paymentMethod: "pod",
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        setBlockedVendors(extractBlockedVendors(payload));
+        const message = getCheckoutErrorMessage(payload, "Failed to place order");
+        throw new Error(message);
+      }
+
+      toast.success("Order placed successfully with Pay on Delivery.");
+      handleSuccess();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to place order";
+      setCheckoutError(message);
+      toast.error(message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const getAllowedCheckoutMethods = (response: EligibilityResponse | null): string[] => {
+    if (!response || !Array.isArray(response.paymentOptions)) {
+      return [];
+    }
+
+    const optionCodes = new Set(response.paymentOptions.map((option) => option.code));
+    const mapped: string[] = [];
+
+    if (optionCodes.has("PAY_ON_DELIVERY")) {
+      mapped.push("pod");
+    }
+    if (optionCodes.has("CARD")) {
+      mapped.push("stripe");
+    }
+    if (optionCodes.has("MPESA") && mpesaEnabled) {
+      mapped.push("mpesa");
+    }
+
+    return mapped;
   };
 
   useEffect(() => {
     if (items.length > 0 && paymentMethod === "stripe" && paymentStage === "payment") {
       createPaymentIntent();
     }
-  }, [items, paymentMethod, paymentStage]);
+  }, [items, paymentMethod, paymentStage, createPaymentIntent]);
 
   if (status === "loading") {
     return (
@@ -132,8 +317,10 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleAddressSubmit = (e: React.FormEvent) => {
+  const handleAddressSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCheckoutError("");
+    setBlockedVendors([]);
 
     // Validate required address fields
     const requiredFields = ['firstName', 'lastName', 'email', 'address', 'city', 'state', 'zipCode'];
@@ -142,6 +329,65 @@ export default function CheckoutPage() {
     if (missingFields.length > 0) {
       toast.error(`Please complete the following fields: ${missingFields.join(', ')}`);
       return;
+    }
+
+    setIsCheckingEligibility(true);
+    try {
+      const eligibilityResponse = await fetch("/api/checkout/eligibility", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          address: {
+            city: shippingAddress.city,
+            country: shippingAddress.country,
+          },
+          items: items.map((item) => ({
+            productId: item.product.id,
+            quantity: item.quantity,
+          })),
+        }),
+      });
+
+      const payload = (await eligibilityResponse.json()) as EligibilityResponse & { error?: string };
+
+      if (!eligibilityResponse.ok) {
+        setBlockedVendors(extractBlockedVendors(payload as ApiErrorPayload));
+        const message = getCheckoutErrorMessage(payload as ApiErrorPayload, "Failed to validate checkout eligibility");
+        throw new Error(message);
+      }
+
+      setEligibility(payload);
+
+      if (!payload.eligible) {
+        setBlockedVendors(
+          (payload.vendorCoverage || [])
+            .filter((entry) => !entry.eligible)
+            .map((entry) => ({
+              name: entry.vendorStoreName || entry.vendorName || entry.vendorId,
+              reason: entry.reason,
+            }))
+            .filter((entry) => Boolean(entry.name))
+        );
+        toast.error("Address is outside one or more vendor delivery ranges.");
+        return;
+      }
+
+      const allowedMethods = getAllowedCheckoutMethods(payload);
+      if (allowedMethods.length === 0) {
+        toast.error("No payment methods are currently available for this cart.");
+        return;
+      }
+
+      setPaymentMethod(allowedMethods[0]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Eligibility check failed";
+      setCheckoutError(message);
+      toast.error(message);
+      return;
+    } finally {
+      setIsCheckingEligibility(false);
     }
 
     // Proceed to payment step
@@ -155,6 +401,9 @@ export default function CheckoutPage() {
   const handleSuccess = () => {
     router.push("/orders");
   };
+
+  const allowedCheckoutMethods = getAllowedCheckoutMethods(eligibility);
+  const canUseSelectedMethod = allowedCheckoutMethods.length === 0 || allowedCheckoutMethods.includes(paymentMethod);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -383,10 +632,30 @@ export default function CheckoutPage() {
               </Card>
 
               <div className="flex justify-end">
-                <Button type="submit" size="lg" className="bg-[#e16b22] hover:bg-[#cf610d]">
-                  Proceed to Payment
+                <Button type="submit" size="lg" className="bg-[#e16b22] hover:bg-[#cf610d]" disabled={isCheckingEligibility}>
+                  {isCheckingEligibility ? "Checking eligibility..." : "Proceed to Payment"}
                 </Button>
               </div>
+
+              {checkoutError && paymentStage === "address" && (
+                <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <p>{checkoutError}</p>
+                  {blockedVendors.length > 0 && (
+                    <ul className="mt-2 list-disc pl-5">
+                      {blockedVendors.map((vendor) => (
+                        <li key={`${vendor.name}-${vendor.reason || "unknown"}`}>
+                          <span className="font-medium">{vendor.name}</span>
+                          {vendor.reason ? (
+                            <Badge variant={getCoverageReasonBadgeVariant(vendor.reason)} className="ml-2 align-middle text-[10px] uppercase tracking-wide">
+                              {formatCoverageReason(vendor.reason)}
+                            </Badge>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </form>
           )}
 
@@ -397,14 +666,82 @@ export default function CheckoutPage() {
                 <CardTitle>Payment Method</CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
+                {checkoutError && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    <p>{checkoutError}</p>
+                    {blockedVendors.length > 0 && (
+                      <ul className="mt-2 list-disc pl-5">
+                        {blockedVendors.map((vendor) => (
+                          <li key={`payment-error-${vendor.name}-${vendor.reason || "unknown"}`}>
+                            <span className="font-medium">{vendor.name}</span>
+                            {vendor.reason ? (
+                              <Badge variant={getCoverageReasonBadgeVariant(vendor.reason)} className="ml-2 align-middle text-[10px] uppercase tracking-wide">
+                                {formatCoverageReason(vendor.reason)}
+                              </Badge>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {eligibility && !eligibility.eligible && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                    <p>Delivery is unavailable for one or more vendors in your cart. Update your shipping address to continue.</p>
+                    {blockedVendors.length > 0 && (
+                      <ul className="mt-2 list-disc pl-5">
+                        {blockedVendors.map((vendor) => (
+                          <li key={`payment-eligibility-${vendor.name}-${vendor.reason || "unknown"}`}>
+                            <span className="font-medium">{vendor.name}</span>
+                            {vendor.reason ? (
+                              <Badge variant={getCoverageReasonBadgeVariant(vendor.reason)} className="ml-2 align-middle text-[10px] uppercase tracking-wide">
+                                {formatCoverageReason(vendor.reason)}
+                              </Badge>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+
+                {eligibility?.eligible && (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                    Available payment methods are based on vendor-approved options for your cart.
+                  </div>
+                )}
+
                 <PaymentMethodSelector
                   onSelect={handlePaymentMethodChange}
                   selected={paymentMethod}
+                  stripeAvailable={true}
+                  mpesaAvailable={mpesaEnabled}
+                  availableMethods={allowedCheckoutMethods}
                 />
+
+                {!canUseSelectedMethod && (
+                  <p className="text-sm text-red-600">Selected payment method is not available for this cart.</p>
+                )}
 
                 {/* Payment Forms */}
                 <div className="mt-8">
-                  {paymentMethod === "stripe" && clientSecret ? (
+                  {paymentMethod === "pod" ? (
+                    <div className="space-y-4">
+                      <p className="text-sm text-muted-foreground">
+                        Your order will be placed immediately and marked as Pay on Delivery.
+                      </p>
+                      <Button
+                        type="button"
+                        className="w-full"
+                        size="lg"
+                        disabled={isLoading || !eligibility?.eligible}
+                        onClick={createPodOrder}
+                      >
+                        {isLoading ? "Placing order..." : "Place Order (Pay on Delivery)"}
+                      </Button>
+                    </div>
+                  ) : paymentMethod === "stripe" && clientSecret ? (
                     <div>
                       <Elements
                         stripe={stripePromise}
@@ -427,7 +764,7 @@ export default function CheckoutPage() {
                     </div>
                   ) : null}
 
-                  {paymentMethod === "mpesa" && (
+                  {paymentMethod === "mpesa" && mpesaEnabled && (
                     <MpesaPaymentForm
                       shippingAddress={shippingAddress}
                       billingAddress={billingAddress}
@@ -448,6 +785,24 @@ export default function CheckoutPage() {
               <CardTitle>Order Summary</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {blockedVendors.length > 0 && (
+                <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                  <p className="font-medium">Delivery issues</p>
+                  <ul className="mt-2 list-disc pl-5">
+                    {blockedVendors.map((vendor) => (
+                      <li key={`summary-${vendor.name}-${vendor.reason || "unknown"}`}>
+                        <span className="font-medium">{vendor.name}</span>
+                        {vendor.reason ? (
+                          <Badge variant={getCoverageReasonBadgeVariant(vendor.reason)} className="ml-2 align-middle text-[10px] uppercase tracking-wide">
+                            {formatCoverageReason(vendor.reason)}
+                          </Badge>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               {/* Cart Items */}
               <div className="space-y-2">
                 {items.map((item) => {
@@ -457,7 +812,7 @@ export default function CheckoutPage() {
 
                   const price = typeof item.product.price === 'number'
                     ? item.product.price
-                    : parseFloat(item.product.price.toString());
+                    : Number(item.product.price);
 
                   return (
                     <div key={item.id} className="flex items-center gap-3">

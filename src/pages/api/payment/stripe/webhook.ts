@@ -2,6 +2,7 @@ import { NextApiRequest, NextApiResponse } from "next";
 import { buffer } from "micro";
 import Stripe from "stripe";
 import { prisma } from "@/lib/prisma";
+import { logger } from "@/lib/logger";
 
 // Disable body parsing, need the raw body for signature verification
 export const config = {
@@ -11,7 +12,7 @@ export const config = {
 };
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
+  apiVersion: "2025-08-27.basil",
 });
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -30,11 +31,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       process.env.STRIPE_WEBHOOK_SECRET!
     );
   } catch (err) {
-    console.error(`[Stripe Webhook] Error verifying webhook signature: ${err instanceof Error ? err.message : err}`);
+    logger.error(`[Stripe Webhook] Error verifying webhook signature: ${err instanceof Error ? err.message : err}`);
     return res.status(400).json({ error: "Invalid signature" });
   }
 
-  console.log(`[Stripe Webhook] Event received: ${event.type}`);
+  logger.info(`[Stripe Webhook] Event received: ${event.type}`);
 
   try {
     if (event.type === 'payment_intent.succeeded') {
@@ -47,7 +48,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     return res.status(200).json({ received: true });
   } catch (error) {
-    console.error(`[Stripe Webhook] Error processing event: ${error instanceof Error ? error.message : error}`);
+    logger.error(`[Stripe Webhook] Error processing event: ${error instanceof Error ? error.message : error}`);
     // Return 200 to Stripe to acknowledge we received the event
     // even though we had an error processing it
     return res.status(200).json({ received: true, error: "Processing error" });
@@ -56,7 +57,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
 async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
   const paymentId = paymentIntent.id;
-  console.log(`[Stripe Webhook] Processing successful payment ${paymentId}`);
+  logger.info(`[Stripe Webhook] Processing successful payment ${paymentId}`);
 
   // Find the order with this payment ID
   const order = await prisma.order.findFirst({
@@ -64,13 +65,13 @@ async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
   });
 
   if (!order) {
-    console.warn(`[Stripe Webhook] No order found for payment ${paymentId}`);
+    logger.warn(`[Stripe Webhook] No order found for payment ${paymentId}`);
     return;
   }
 
   // Check if order is already paid to avoid duplicate processing
   if (order.paymentStatus === "paid") {
-    console.log(`[Stripe Webhook] Order ${order.id} already marked as paid, skipping`);
+    logger.info(`[Stripe Webhook] Order ${order.id} already marked as paid, skipping`);
     return;
   }
 
@@ -152,12 +153,12 @@ async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
     });
   });
 
-  console.log(`[Stripe Webhook] Successfully processed payment for order ${order.id}`);
+  logger.info(`[Stripe Webhook] Successfully processed payment for order ${order.id}`);
 }
 
 async function handleFailedPayment(paymentIntent: Stripe.PaymentIntent) {
   const paymentId = paymentIntent.id;
-  console.log(`[Stripe Webhook] Processing failed payment ${paymentId}`);
+  logger.info(`[Stripe Webhook] Processing failed payment ${paymentId}`);
 
   // Find the order with this payment ID
   const order = await prisma.order.findFirst({
@@ -165,7 +166,7 @@ async function handleFailedPayment(paymentIntent: Stripe.PaymentIntent) {
   });
 
   if (!order) {
-    console.warn(`[Stripe Webhook] No order found for payment ${paymentId}`);
+    logger.warn(`[Stripe Webhook] No order found for payment ${paymentId}`);
     return;
   }
 
@@ -193,5 +194,5 @@ async function handleFailedPayment(paymentIntent: Stripe.PaymentIntent) {
     }
   });
 
-  console.log(`[Stripe Webhook] Payment failed for order ${order.id}`);
+  logger.info(`[Stripe Webhook] Payment failed for order ${order.id}`);
 }

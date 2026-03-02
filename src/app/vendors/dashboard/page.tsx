@@ -2,13 +2,26 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+
+type VendorNotification = {
+  id: string;
+  type?: string | null;
+  priority?: string | null;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+};
+
+type NotificationResponse = {
+  notifications: VendorNotification[];
+  unreadCount: number;
+};
 
 export default function VendorDashboardPage() {
   const { data: session, status } = useSession();
@@ -16,8 +29,111 @@ export default function VendorDashboardPage() {
 
   const [analytics, setAnalytics] = useState<any>(null);
   const [inventory, setInventory] = useState<any>(null);
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<VendorNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [isMarkingAllRead, setIsMarkingAllRead] = useState(false);
+  const [markingIds, setMarkingIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const getCsrfHeaders = useCallback(() => {
+    return {
+      "Content-Type": "application/json",
+      Origin: window.location.origin,
+      Referer: window.location.href,
+    };
+  }, []);
+
+  // Fetch functions with safe defaults
+  const fetchAnalytics = useCallback(async () => {
+    try {
+      const response = await fetch("/api/vendor/analytics");
+      const data = response.ok ? await response.json() : null;
+      setAnalytics(data || getMockAnalytics());
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      setAnalytics(getMockAnalytics());
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const fetchInventory = useCallback(async () => {
+    try {
+      const response = await fetch("/api/vendor/inventory");
+      const data = response.ok ? await response.json() : null;
+      setInventory(data || getMockInventory());
+    } catch (error) {
+      console.error("Error fetching inventory:", error);
+      setInventory(getMockInventory());
+    }
+  }, []);
+
+  const fetchNotifications = useCallback(async () => {
+    setNotificationsLoading(true);
+    try {
+      const response = await fetch("/api/notifications?limit=20");
+      const data = response.ok ? ((await response.json()) as NotificationResponse) : null;
+      setNotifications(data?.notifications || []);
+      setUnreadCount(data?.unreadCount || 0);
+    } catch (error) {
+      console.error("Error fetching notifications:", error);
+      setNotifications([]);
+      setUnreadCount(0);
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, []);
+
+  const markNotificationRead = useCallback(
+    async (id: string) => {
+      setMarkingIds((prev) => [...prev, id]);
+
+      try {
+        const response = await fetch("/api/notifications", {
+          method: "PATCH",
+          headers: getCsrfHeaders(),
+          body: JSON.stringify({ ids: [id] }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to mark notification ${id} as read`);
+        }
+
+        setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, isRead: true } : item)));
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      } catch (error) {
+        console.error("Error marking notification as read:", error);
+      } finally {
+        setMarkingIds((prev) => prev.filter((item) => item !== id));
+      }
+    },
+    [getCsrfHeaders]
+  );
+
+  const markAllNotificationsRead = useCallback(async () => {
+    if (unreadCount === 0) return;
+
+    setIsMarkingAllRead(true);
+    try {
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: getCsrfHeaders(),
+        body: JSON.stringify({ markAllRead: true }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to mark all notifications as read");
+      }
+
+      setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+      setUnreadCount(0);
+    } catch (error) {
+      console.error("Error marking all notifications as read:", error);
+    } finally {
+      setIsMarkingAllRead(false);
+    }
+  }, [getCsrfHeaders, unreadCount]);
 
   useEffect(() => {
     if (status === "loading") return;
@@ -35,43 +151,7 @@ export default function VendorDashboardPage() {
     fetchAnalytics();
     fetchInventory();
     fetchNotifications();
-  }, [session, status, router]);
-
-  // Fetch functions with safe defaults
-  const fetchAnalytics = async () => {
-    try {
-      const response = await fetch("/api/vendor/analytics");
-      const data = response.ok ? await response.json() : null;
-      setAnalytics(data || getMockAnalytics());
-    } catch (error) {
-      console.error("Error fetching analytics:", error);
-      setAnalytics(getMockAnalytics());
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchInventory = async () => {
-    try {
-      const response = await fetch("/api/vendor/inventory");
-      const data = response.ok ? await response.json() : null;
-      setInventory(data || getMockInventory());
-    } catch (error) {
-      console.error("Error fetching inventory:", error);
-      setInventory(getMockInventory());
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      const response = await fetch("/api/notifications");
-      const data = response.ok ? await response.json() : [];
-      setNotifications(data);
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
-      setNotifications([]);
-    }
-  };
+  }, [session, status, router, fetchAnalytics, fetchInventory, fetchNotifications]);
 
   // Mock fallback data
   const getMockAnalytics = () => ({
@@ -107,13 +187,14 @@ export default function VendorDashboardPage() {
     return null;
   }
 
-  const recentOrders = analytics?.recentOrders || [];
-  const products = analytics?.topProducts || [];
   const summary = analytics?.summary || {};
   const revenueData = analytics?.revenue || [];
 
   const inventoryStats = inventory?.stats || {};
-  const inventoryItems = inventory?.inventory || [];
+
+  const moderationNotifications = notifications.filter(
+    (item) => item.type === "product_moderation" || item.title.toLowerCase().includes("product")
+  );
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -126,10 +207,10 @@ export default function VendorDashboardPage() {
         </div>
         <div className="flex flex-wrap gap-3">
           <Button asChild variant="outline">
-            <Link href="/vendors/dashboard/settings">Store Settings</Link>
+            <Link href="/vendors/dashboard">Store Settings</Link>
           </Button>
           <Button asChild>
-            <Link href="/vendors/dashboard/products/new">Add New Product</Link>
+            <Link href="/vendors/dashboard/products">Add New Product</Link>
           </Button>
         </div>
       </div>
@@ -214,11 +295,58 @@ export default function VendorDashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Tabs: Orders, Products, Inventory, Analytics, Reviews, Notifications */}
-      <Tabs defaultValue="orders" className="space-y-4">
-        {/* ... Keep your TabsContent as before ... */}
-        {/* Just ensure all arrays use optional chaining: recentOrders || [], products || [], inventoryItems || [], notifications || [] */}
-      </Tabs>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                Moderation Notifications
+                <Badge variant={unreadCount > 0 ? "destructive" : "secondary"}>{unreadCount} unread</Badge>
+              </CardTitle>
+              <CardDescription>Shows admin decisions for your product submissions and any rejection reasons.</CardDescription>
+            </div>
+
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => void fetchNotifications()} disabled={notificationsLoading}>
+                {notificationsLoading ? "Refreshing..." : "Refresh"}
+              </Button>
+              <Button size="sm" onClick={() => void markAllNotificationsRead()} disabled={isMarkingAllRead || unreadCount === 0}>
+                {isMarkingAllRead ? "Marking..." : "Mark all as read"}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {moderationNotifications.length === 0 ? (
+            <p className="text-sm text-gray-500">No moderation notifications yet.</p>
+          ) : (
+            <ul className="space-y-3">
+              {moderationNotifications.map((notification) => (
+                <li key={notification.id} className="rounded-md border p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium">{notification.title}</p>
+                      <p className="text-sm text-gray-600">{notification.message}</p>
+                      <p className="mt-1 text-xs text-gray-500">{new Date(notification.createdAt).toLocaleString()}</p>
+                    </div>
+
+                    {!notification.isRead && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void markNotificationRead(notification.id)}
+                        disabled={markingIds.includes(notification.id)}
+                      >
+                        {markingIds.includes(notification.id) ? "Saving..." : "Mark as read"}
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

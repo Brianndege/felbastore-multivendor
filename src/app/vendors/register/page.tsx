@@ -172,7 +172,7 @@ export default function VendorRegisterPage() {
                         htmlFor="terms"
                         className="text-sm font-normal"
                       >
-                        I agree to the <Link href="/terms" className="text-[#e16b22] hover:underline">Terms and Conditions</Link>, <Link href="/privacy" className="text-[#e16b22] hover:underline">Privacy Policy</Link>, and <Link href="/seller-agreement" className="text-[#e16b22] hover:underline">Seller Agreement</Link>
+                        I agree to the <Link href="/terms" className="text-[#e16b22] hover:underline">Terms and Conditions</Link>, <Link href="/privacy" className="text-[#e16b22] hover:underline">Privacy Policy</Link>, and <Link href="/vendors/resources" className="text-[#e16b22] hover:underline">Seller Agreement</Link>
                       </Label>
                     </div>
                   </div>
@@ -340,7 +340,7 @@ export default function VendorRegisterPage() {
                         htmlFor="terms-business"
                         className="text-sm font-normal"
                       >
-                        I agree to the <Link href="/terms" className="text-[#e16b22] hover:underline">Terms and Conditions</Link>, <Link href="/privacy" className="text-[#e16b22] hover:underline">Privacy Policy</Link>, and <Link href="/seller-agreement" className="text-[#e16b22] hover:underline">Seller Agreement</Link>
+                        I agree to the <Link href="/terms" className="text-[#e16b22] hover:underline">Terms and Conditions</Link>, <Link href="/privacy" className="text-[#e16b22] hover:underline">Privacy Policy</Link>, and <Link href="/vendors/resources" className="text-[#e16b22] hover:underline">Seller Agreement</Link>
                       </Label>
                     </div>
                   </div>

@@ -181,7 +181,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   const getCartTotal = () => {
     return state.items.reduce((total, item) => {
-      const price = typeof item.product.price === "number" ? item.product.price : parseFloat(item.product.price.toString());
+      const price = typeof item.product.price === "number" ? item.product.price : Number(item.product.price);
       return total + (price * item.quantity);
     }, 0);
   };

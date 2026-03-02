@@ -203,13 +203,13 @@ function OrderDetailContent() {
                             <span className="font-medium">
                               ${((typeof item.price === 'number'
                                 ? item.price
-                                : parseFloat(item.price.toString())) * item.quantity).toFixed(2)}
+                                : Number(item.price)) * item.quantity).toFixed(2)}
                             </span>
                           </div>
                           <p className="text-sm text-gray-500">
                             ${(typeof item.price === 'number'
                               ? item.price
-                              : parseFloat(item.price.toString())).toFixed(2)} × {item.quantity}
+                              : Number(item.price)).toFixed(2)} × {item.quantity}
                           </p>
                           {item.product?.vendor && (
                             <p className="text-sm text-gray-500">

@@ -1,0 +1,48 @@
+name: Governance Consistency
+
+on:
+  pull_request:
+    paths:
+      - 'README.md'
+      - 'docs/enterprise/DEVOPS_CICD.md'
+      - 'docs/enterprise/GITHUB_REPO_SETTINGS_RUNBOOK.md'
+      - '.github/workflows/inventory-env-validate.yml'
+      - '.github/workflows/inventory-ops-smoke-gate.yml'
+      - '.github/workflows/inventory-dedupe-check.yml'
+      - '.github/workflows/release-evidence-pr-check.yml'
+      - '.github/governance-consistency.config.json'
+      - 'docs/enterprise/RELEASE_EVIDENCE_TEMPLATE.md'
+      - '.github/RELEASE_TEMPLATE.md'
+      - 'scripts/verify-governance-consistency.cjs'
+      - 'package.json'
+  workflow_dispatch:
+
+jobs:
+  governance-consistency:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify governance consistency
+        env:
+          GOVERNANCE_REPORT_PATH: artifacts/governance-required-checks.md
+        run: npm run verify:governance
+
+      - name: Upload governance required checks artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-required-checks
+          path: artifacts/governance-required-checks.md
+          if-no-files-found: error

@@ -92,6 +92,25 @@ Your database should now have these tables:
 3. **Database not found**: Make sure database name is correct in connection string
 4. **SSL issues**: Add `?sslaccept=strict` to the end of your DATABASE_URL if required
 
+### Inventory Scan Preflight (Local + CI)
+
+If inventory scan commands fail intermittently with reachability errors:
+
+1. Run env preflight first:
+```bash
+npm run jobs:inventory-scan:validate
+```
+1. Run connectivity diagnostics:
+```bash
+npm run diagnose:inventory-scan
+```
+1. Use safe manual execution:
+```bash
+npm run jobs:inventory-scan:safe
+```
+2. If `APP_URL` is `http://localhost:3000`, start the app before running scan commands.
+3. In GitHub-hosted workflows, set `APP_URL` to a publicly reachable deployed HTTPS URL (not localhost).
+
 ### Debugging Connection:
 Check your connection by running:
 ```bash

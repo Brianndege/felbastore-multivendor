@@ -1,0 +1,59 @@
+name: Inventory Dedupe Check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  inventory-dedupe-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run inventory dedupe regression check
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          INVENTORY_SCAN_JOB_KEY: ${{ secrets.INVENTORY_SCAN_JOB_KEY }}
+          INVENTORY_SCAN_LOOKBACK_HOURS: ${{ secrets.INVENTORY_SCAN_LOOKBACK_HOURS }}
+          INVENTORY_SCAN_MAX_PRODUCTS: ${{ secrets.INVENTORY_SCAN_MAX_PRODUCTS }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "APP_URL secret is missing"
+            exit 1
+          fi
+
+          if [ -z "$INVENTORY_SCAN_JOB_KEY" ]; then
+            echo "INVENTORY_SCAN_JOB_KEY secret is missing"
+            exit 1
+          fi
+
+          if [[ ! "$APP_URL" =~ ^https?:// ]]; then
+            echo "APP_URL must start with http:// or https://"
+            exit 1
+          fi
+
+          if [[ "$APP_URL" =~ localhost|127\.0\.0\.1 ]]; then
+            echo "APP_URL must be a publicly reachable URL for GitHub-hosted runners (localhost is not allowed)"
+            exit 1
+          fi
+
+          npm run jobs:inventory-scan:validate
+
+          npm run test:inventory-dedupe
+
+      - name: Notify Slack on failure
+        if: failure() && secrets.INVENTORY_SCAN_SLACK_WEBHOOK_URL != ''
+        uses: ./.github/actions/notify-slack
+        with:
+          webhook_url: ${{ secrets.INVENTORY_SCAN_SLACK_WEBHOOK_URL }}
+          message: "❌ Inventory dedupe check failed for ${{ github.repository }} on ref ${{ github.ref_name }}. Run: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"

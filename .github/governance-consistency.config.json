@@ -1,0 +1,47 @@
+{
+  "workflowSpecs": [
+    {
+      "filePath": ".github/workflows/governance-consistency.yml",
+      "jobId": "governance-consistency",
+      "requiredChecksEntry": "governance-consistency / governance-consistency"
+    },
+    {
+      "filePath": ".github/workflows/inventory-env-validate.yml",
+      "jobId": "inventory-env-validate",
+      "requiredChecksEntry": "inventory-env-validate / inventory-env-validate"
+    },
+    {
+      "filePath": ".github/workflows/inventory-ops-smoke-gate.yml",
+      "jobId": "inventory-ops-smoke-gate",
+      "requiredChecksEntry": "inventory-ops-smoke-gate / inventory-ops-smoke-gate"
+    },
+    {
+      "filePath": ".github/workflows/inventory-dedupe-check.yml",
+      "jobId": "inventory-dedupe-check",
+      "requiredChecksEntry": "inventory-dedupe-check / inventory-dedupe-check"
+    },
+    {
+      "filePath": ".github/workflows/release-evidence-pr-check.yml",
+      "jobId": "check-release-evidence",
+      "requiredChecksEntry": "check-release-evidence / check-release-evidence"
+    }
+  ],
+  "docsToCheck": [
+    "README.md",
+    "docs/enterprise/DEVOPS_CICD.md",
+    "docs/enterprise/GITHUB_REPO_SETTINGS_RUNBOOK.md"
+  ],
+  "releaseEvidence": {
+    "workflowPath": ".github/workflows/release-evidence-pr-check.yml",
+    "templatePath": "docs/enterprise/RELEASE_EVIDENCE_TEMPLATE.md",
+    "githubReleaseTemplatePath": ".github/RELEASE_TEMPLATE.md",
+    "requiredEvidenceKeys": [
+      "inventory-ops-smoke-gate",
+      "inventory-dedupe-check"
+    ],
+    "requiredWorkflowRefs": [
+      ".github/workflows/inventory-ops-smoke-gate.yml",
+      ".github/workflows/inventory-dedupe-check.yml"
+    ]
+  }
+}

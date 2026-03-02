@@ -196,7 +196,7 @@ export default function OrdersPage() {
                               <p className="text-sm text-gray-500">
                                 Qty: {item.quantity} × ${(typeof item.price === 'number'
                                   ? item.price
-                                  : parseFloat(item.price.toString())).toFixed(2)}
+                                  : Number(item.price)).toFixed(2)}
                               </p>
                               {item.product?.vendor && (
                                 <p className="text-xs text-gray-500">
@@ -208,7 +208,7 @@ export default function OrdersPage() {
                               <span className="font-medium">
                                 ${((typeof item.price === 'number'
                                   ? item.price
-                                  : parseFloat(item.price.toString())) * item.quantity).toFixed(2)}
+                                  : Number(item.price)) * item.quantity).toFixed(2)}
                               </span>
                             </div>
                           </div>
@@ -230,7 +230,7 @@ export default function OrdersPage() {
                         <span className="font-bold">
                           ${(typeof order.totalAmount === 'number'
                             ? order.totalAmount
-                            : parseFloat(order.totalAmount.toString())).toFixed(2)}
+                            : Number(order.totalAmount)).toFixed(2)}
                         </span>
                       </div>
                     </div>

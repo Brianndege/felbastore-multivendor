@@ -31,6 +31,9 @@
   "include": [
     "**/*.ts",
     "**/*.tsx",
+    ".next-runtime*/types/**/*.ts",
+    ".next-runtime-smoke/types/**/*.ts",
+    ".next-runtime/types/**/*.ts",
     ".next/types/**/*.ts",
     "build/types/**/*.ts",
     "next-env.d.ts",

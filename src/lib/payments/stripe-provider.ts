@@ -1,4 +1,5 @@
 import Stripe from 'stripe';
+import type { Appearance } from "@stripe/stripe-js";
 import {
   PaymentProvider,
   CreatePaymentIntent,
@@ -6,10 +7,22 @@ import {
   PaymentVerifyResponse
 } from './types';
 
-// Server-side Stripe instance
-const stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-11-20.acacia",
-});
+let stripeClient: Stripe | null = null;
+
+function getStripeClient() {
+  if (!stripeClient) {
+    const secretKey = process.env.STRIPE_SECRET_KEY;
+    if (!secretKey) {
+      throw new Error("Stripe secret key is not configured");
+    }
+
+    stripeClient = new Stripe(secretKey, {
+      apiVersion: "2025-08-27.basil",
+    });
+  }
+
+  return stripeClient;
+}
 
 export const StripePaymentProvider: PaymentProvider = {
   id: 'stripe',
@@ -28,16 +41,14 @@ export const StripePaymentProvider: PaymentProvider = {
       const amountInCents = Math.round(amount.total * 100);
 
       // Create payment intent with idempotency key to prevent duplicates
-      const paymentIntent = await stripeClient.paymentIntents.create(
+      const paymentIntent = await getStripeClient().paymentIntents.create(
         {
           amount: amountInCents,
           currency: amount.currency.toLowerCase(),
           metadata: {
-            orderId: metadata.orderId,
-            userId: metadata.userId,
+            ...metadata,
             itemCount: metadata.itemCount.toString(),
             paymentMethod: 'stripe',
-            ...metadata
           },
         },
         idempotencyKey ? { idempotencyKey } : undefined
@@ -48,7 +59,7 @@ export const StripePaymentProvider: PaymentProvider = {
         status: 'PENDING',
         message: 'Payment intent created',
         paymentId: paymentIntent.id,
-        clientSecret: paymentIntent.client_secret,
+        clientSecret: paymentIntent.client_secret ?? undefined,
         providerReference: paymentIntent.id
       };
     } catch (error: any) {
@@ -65,7 +76,7 @@ export const StripePaymentProvider: PaymentProvider = {
 
   verifyPayment: async (paymentId: string): Promise<PaymentVerifyResponse> => {
     try {
-      const paymentIntent = await stripeClient.paymentIntents.retrieve(paymentId);
+      const paymentIntent = await getStripeClient().paymentIntents.retrieve(paymentId);
 
       const isSuccessful = paymentIntent.status === 'succeeded';
 
@@ -94,7 +105,7 @@ export const StripePaymentProvider: PaymentProvider = {
 };
 
 // Export for client-side usage
-export const STRIPE_APPEARANCE = {
+export const STRIPE_APPEARANCE: Appearance = {
   theme: 'stripe',
   variables: {
     colorPrimary: '#e16b22',

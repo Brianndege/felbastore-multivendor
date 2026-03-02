@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]"; // adjust path if needed
 import { prisma } from "@/lib/prisma";
+import { enforceCsrfOrigin } from "@/lib/csrf";
 
 export default async function handler(
   req: NextApiRequest,
@@ -30,6 +31,10 @@ export default async function handler(
     }
 
     if (req.method === "PUT") {
+      if (!enforceCsrfOrigin(req, res)) {
+        return;
+      }
+
       const { quantity } = req.body;
       const parsedQty = parseInt(quantity);
 
@@ -55,6 +60,10 @@ export default async function handler(
     }
 
     if (req.method === "DELETE") {
+      if (!enforceCsrfOrigin(req, res)) {
+        return;
+      }
+
       await prisma.cartItem.delete({
         where: { id },
       });

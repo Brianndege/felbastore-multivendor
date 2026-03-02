@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
+import { enforceCsrfOrigin } from "@/lib/csrf";
 import {
   processPayment,
   calculateOrderAmount,
@@ -9,28 +10,39 @@ import {
 } from "@/lib/payments";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  // Verify session and authorization
-  const session = await getServerSession(req, res, authOptions);
-  if (!session || session.user.role !== "user") {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-
-  const userId = session.user.id;
-  const { orderId, paymentMethod, returnUrl } = req.body;
-
-  if (!orderId) {
-    return res.status(400).json({ error: "Order ID is required" });
-  }
-
-  if (!paymentMethod) {
-    return res.status(400).json({ error: "Payment method is required" });
-  }
-
   try {
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    if (!enforceCsrfOrigin(req, res)) {
+      return;
+    }
+
+    const session = await getServerSession(req, res, authOptions);
+    if (!session || session.user.role !== "user") {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const userId = session.user.id;
+    const {
+      orderId,
+      paymentMethod,
+      returnUrl,
+    } = (req.body ?? {}) as {
+      orderId?: string;
+      paymentMethod?: string;
+      returnUrl?: string;
+    };
+
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required" });
+    }
+
+    if (!paymentMethod) {
+      return res.status(400).json({ error: "Payment method is required" });
+    }
+
     // Get order and validate it belongs to the current user
     const order = await prisma.order.findFirst({
       where: {
@@ -52,6 +64,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (order.paymentStatus === "paid") {
       return res.status(400).json({ error: "Order is already paid" });
+    }
+
+    if (order.paymentStatus === "approved" && (order.paymentMethod || "").toLowerCase() === "pod") {
+      return res.status(400).json({ error: "Pay on Delivery orders do not require payment initialization" });
+    }
+
+    const requestedPaymentMethod = paymentMethod.trim().toLowerCase();
+    const orderPaymentMethod = (order.paymentMethod || "").trim().toLowerCase();
+    if (orderPaymentMethod && requestedPaymentMethod !== orderPaymentMethod) {
+      return res.status(400).json({
+        error: "Requested payment method does not match order payment method",
+      });
     }
 
     // Recalculate the total to ensure data integrity
@@ -99,7 +123,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Process the payment with the selected payment method
     const paymentResult = await processPayment({
-      paymentMethod,
+      paymentMethod: requestedPaymentMethod,
       amount: {
         ...calculatedAmount,
         currency: 'USD', // Default currency
@@ -108,6 +132,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         orderId,
         userId,
         itemCount: order.orderItems.length,
+        paymentMethod: requestedPaymentMethod,
         paymentAttempt: Date.now().toString(),
       },
       customerInfo: {
@@ -126,7 +151,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           where: { id: orderId },
           data: {
             paymentIntentId: paymentResult.paymentId,
-            paymentMethod,
+            paymentMethod: requestedPaymentMethod,
             // Don't update payment status yet as the payment is still in progress
           },
         });

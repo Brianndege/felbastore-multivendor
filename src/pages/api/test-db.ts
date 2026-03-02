@@ -1,9 +1,26 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (!["GET", "POST"].includes(req.method || "")) {
-    return res.status(405).json({ error: "Method not allowed" });
+type HealthResponse = {
+  success: boolean;
+  message?: string;
+  error?: string;
+  details?: string;
+  steps?: Record<string, string>;
+  results?: Record<string, unknown>;
+  timestamp: string;
+};
+
+export default async function handler(
+  req: NextApiRequest,
+  res: NextApiResponse<HealthResponse>
+) {
+  if (!req.method || !["GET", "POST"].includes(req.method)) {
+    return res.status(405).json({
+      success: false,
+      error: "Method not allowed",
+      timestamp: new Date().toISOString(),
+    });
   }
 
   const dbHealthcheckKey = process.env.DB_HEALTHCHECK_KEY;
@@ -16,15 +33,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(403).json({
         success: false,
         error: "DB health check is disabled in production (missing DB_HEALTHCHECK_KEY).",
+        timestamp: new Date().toISOString(),
       });
     }
 
     if (providedKey !== dbHealthcheckKey) {
-      return res.status(401).json({ success: false, error: "Invalid health check key." });
+      return res.status(401).json({
+        success: false,
+        error: "Invalid health check key.",
+        timestamp: new Date().toISOString(),
+      });
     }
   }
-
-  console.log("[test-db] Starting comprehensive database write health check...");
 
   const steps: Record<string, string> = {};
   const createdIds: {
@@ -42,13 +62,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const testVendorEmail = `db-health-vendor-${suffix}@example.com`;
 
   try {
-    console.log("[test-db] Step 1: Checking base connectivity...");
     const userCount = await prisma.user.count();
     const vendorCount = await prisma.vendor.count();
     const productCount = await prisma.product.count();
     steps.connection = "✓ Connected";
 
-    console.log("[test-db] Step 2: Creating test user...");
     const testUser = await prisma.user.create({
       data: {
         name: "DB Health User",
@@ -60,7 +78,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     createdIds.userId = testUser.id;
     steps.userCreate = "✓ User write works";
 
-    console.log("[test-db] Step 3: Creating test vendor...");
     const testVendor = await prisma.vendor.create({
       data: {
         name: "DB Health Vendor",
@@ -73,7 +90,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     createdIds.vendorId = testVendor.id;
     steps.vendorCreate = "✓ Vendor write works";
 
-    console.log("[test-db] Step 4: Creating test product...");
     const testProduct = await prisma.product.create({
       data: {
         vendorId: testVendor.id,
@@ -90,7 +106,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     createdIds.productId = testProduct.id;
     steps.productCreate = "✓ Product write works";
 
-    console.log("[test-db] Step 5: Creating test cart item...");
     const testCartItem = await prisma.cartItem.create({
       data: {
         userId: testUser.id,
@@ -101,7 +116,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     createdIds.cartItemId = testCartItem.id;
     steps.cartWrite = "✓ Cart write works";
 
-    console.log("[test-db] Step 6: Creating test order and order item...");
     const testOrder = await prisma.order.create({
       data: {
         orderNumber: `HC-${suffix}`,
@@ -133,7 +147,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               quantity: 2,
               price: 19.99,
               productName: testProduct.name,
-              productImage: null,
             },
           ],
         },
@@ -142,7 +155,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     createdIds.orderId = testOrder.id;
     steps.orderWrite = "✓ Order write works";
 
-    console.log("[test-db] Step 7: Writing notification and inventory alert...");
     const notification = await prisma.notification.create({
       data: {
         userId: testUser.id,
@@ -167,14 +179,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     createdIds.inventoryAlertId = inventoryAlert.id;
     steps.notificationAndAlertWrite = "✓ Notification + inventory alert writes work";
 
-    console.log("[test-db] Step 8: Product update write check...");
     await prisma.product.update({
       where: { id: testProduct.id },
       data: { inventory: { decrement: 1 } },
     });
     steps.updateWrite = "✓ Update writes work";
 
-    console.log("[test-db] Step 9: Query sanity check...");
     const sampleVendors = await prisma.vendor.findMany({
       take: 5,
       select: {
@@ -184,24 +194,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         storeName: true,
       },
     });
-    console.log('[test-db] Found', vendors.length, 'vendors');
-
-    // Test 4: Check products
-    console.log('[test-db] Test 4: Testing product query...');
-    const productCount = await prisma.product.count();
-    console.log('[test-db] Found', productCount, 'products');
-
-    console.log('[test-db] All tests passed successfully!');
-
-    return res.status(200).json({
-      success: true,
-      message: "Database connectivity test passed",
-      results: {
-        connection: "✓ Connected",
-        userCount,
     steps.queryRead = "✓ Read queries work";
-        productCount,
-    console.log("[test-db] All health-check writes passed. Starting cleanup...");
 
     if (createdIds.orderId) {
       await prisma.order.delete({ where: { id: createdIds.orderId } });
@@ -214,12 +207,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (createdIds.inventoryAlertId) {
-      await prisma.inventoryAlert.delete({ where: { id: createdIds.inventoryAlertId } }).catch(() => {});
+      await prisma.inventoryAlert
+        .delete({ where: { id: createdIds.inventoryAlertId } })
+        .catch(() => {});
       createdIds.inventoryAlertId = undefined;
     }
 
     if (createdIds.notificationId) {
-      await prisma.notification.delete({ where: { id: createdIds.notificationId } }).catch(() => {});
+      await prisma.notification
+        .delete({ where: { id: createdIds.notificationId } })
+        .catch(() => {});
       createdIds.notificationId = undefined;
     }
 
@@ -239,22 +236,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     steps.cleanup = "✓ Cleanup successful";
-    });
-  } catch (error) {
-    console.error('[test-db] Database test failed:', error);
-      message: "Database write health check passed",
-      message: error instanceof Error ? error.message : 'Unknown error',
-        ...steps,
-      error,
-    });
 
+    return res.status(200).json({
+      success: true,
+      message: "Database write health check passed",
+      results: {
+        userCount,
+        vendorCount,
+        productCount,
         sampleVendors,
+      },
+      steps,
       timestamp: new Date().toISOString(),
     });
-  }
-}
-    console.error("[test-db] Health check failed:", error);
-
+  } catch (error) {
     if (createdIds.orderId) {
       await prisma.order.delete({ where: { id: createdIds.orderId } }).catch(() => {});
     }

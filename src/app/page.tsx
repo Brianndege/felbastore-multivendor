@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import Link from "next/link";
+import { DEFAULT_CATEGORIES } from "@/lib/categories";
 
 export default function Home() {
   // Mock data for featured products
@@ -40,14 +41,7 @@ export default function Home() {
   ];
 
   // Mock data for categories
-  const categories = [
-    { id: "1", name: "Electronics", icon: "📱" },
-    { id: "2", name: "Fashion", icon: "👕" },
-    { id: "3", name: "Home & Garden", icon: "🏡" },
-    { id: "4", name: "Beauty & Health", icon: "💄" },
-    { id: "5", name: "Toys & Games", icon: "🎮" },
-    { id: "6", name: "Sports", icon: "⚽" },
-  ];
+  const categories = DEFAULT_CATEGORIES.slice(0, 6);
 
   return (
     <main className="flex min-h-screen flex-col">
@@ -82,7 +76,7 @@ export default function Home() {
             {categories.map((category) => (
               <Link
                 key={category.id}
-                href={`/category/${category.id}`}
+                href={`/categories/${category.id}`}
                 className="flex flex-col items-center justify-center rounded-lg bg-white p-6 text-center shadow-sm transition-all hover:shadow-md"
               >
                 <span className="mb-2 text-4xl">{category.icon}</span>

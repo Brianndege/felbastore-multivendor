@@ -105,13 +105,13 @@ export default function Header() {
                         <Link href="/admin/dashboard">Admin Dashboard</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/users">Manage Users</Link>
+                        <Link href="/admin/dashboard#users">Manage Users</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/vendors">Manage Vendors</Link>
+                        <Link href="/admin/dashboard#vendors">Manage Vendors</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/admin/products">Manage Products</Link>
+                        <Link href="/admin/dashboard#products">Manage Products</Link>
                       </DropdownMenuItem>
                     </>
                   ) : session.user.role === "vendor" ? (
@@ -123,24 +123,24 @@ export default function Header() {
                         <Link href="/vendors/dashboard/products">My Products</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/vendors/dashboard/orders">My Orders</Link>
+                        <Link href="/vendors/dashboard">My Orders</Link>
                       </DropdownMenuItem>
                     </>
                   ) : (
                     <>
                       <DropdownMenuItem asChild>
-                        <Link href="/account">My Account</Link>
+                        <Link href="/orders">My Account</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
                         <Link href="/orders">My Orders</Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link href="/wishlist">Wishlist</Link>
+                        <Link href="/products/featured">Wishlist</Link>
                       </DropdownMenuItem>
                     </>
                   )}
                   <DropdownMenuItem asChild>
-                    <Link href="/account/settings">Settings</Link>
+                    <Link href="/help">Settings</Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => signOut()}>
                     Sign Out

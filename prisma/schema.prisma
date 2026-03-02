@@ -10,6 +10,25 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum PaymentMethodKind {
+  PAY_ON_DELIVERY
+  CARD
+  MPESA
+  BANK_TRANSFER
+  WALLET
+}
+
+enum ApprovalStatus {
+  pending_admin
+  approved
+  rejected
+}
+
+enum CoverageMode {
+  radius
+  polygon
+}
+
 // ----------------------
 // Auth & Tokens
 // ----------------------
@@ -113,6 +132,8 @@ model Vendor {
   notifications     Notification[]
   analytics         VendorAnalytics[]
   inventoryAlerts   InventoryAlert[]
+  deliveryZones     VendorDeliveryZone[]
+  paymentMethods    VendorPaymentMethod[]
 }
 
 // ----------------------
@@ -181,6 +202,7 @@ model Product {
   reviews       Review[]
   wishlistItems WishlistItem[]
   inventoryAlerts InventoryAlert[]
+  paymentMethods ProductPaymentMethod[]
 
   @@index([vendorId])
   @@index([category])
@@ -348,6 +370,22 @@ model VendorAnalytics {
   vendor Vendor @relation(fields: [vendorId], references: [id])
 }
 
+model OutboxEvent {
+  id           String   @id @default(cuid())
+  topic        String
+  entityType   String?
+  entityId     String?
+  payload      String   @db.Text
+  status       String   @default("pending")
+  attemptCount Int      @default(0)
+  publishedAt  DateTime?
+  lastError    String?  @db.Text
+  createdAt    DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([topic, createdAt])
+}
+
 // ----------------------
 // Inventory Alerts
 // ----------------------
@@ -365,5 +403,56 @@ model InventoryAlert {
   product Product @relation(fields: [productId], references: [id])
 
   @@index([vendorId])
+  @@index([productId])
+}
+
+model VendorDeliveryZone {
+  id             String       @id @default(cuid())
+  vendorId       String
+  name           String
+  mode           CoverageMode @default(radius)
+  centerLat      Decimal?     @db.Decimal(10, 7)
+  centerLng      Decimal?     @db.Decimal(10, 7)
+  radiusKm       Decimal?     @db.Decimal(8, 2)
+  polygonGeoJson String?      @db.Text
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  vendor Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+
+  @@index([vendorId, isActive])
+}
+
+model VendorPaymentMethod {
+  id               String            @id @default(cuid())
+  vendorId         String
+  methodKind       PaymentMethodKind
+  label            String
+  config           String?           @db.Text
+  approvalStatus   ApprovalStatus    @default(pending_admin)
+  approvedByUserId String?
+  approvedAt       DateTime?
+  rejectionReason  String?           @db.Text
+  isActive         Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  vendor   Vendor                  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  products ProductPaymentMethod[]
+
+  @@index([vendorId, approvalStatus, isActive])
+}
+
+model ProductPaymentMethod {
+  id                    String   @id @default(cuid())
+  productId             String
+  vendorPaymentMethodId String
+  createdAt             DateTime @default(now())
+
+  product             Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  vendorPaymentMethod VendorPaymentMethod @relation(fields: [vendorPaymentMethodId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, vendorPaymentMethodId])
   @@index([productId])
 }

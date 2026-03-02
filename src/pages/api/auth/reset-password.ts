@@ -1,9 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
+import { enforceCsrfOrigin } from "@/lib/csrf";
 import bcrypt from "bcryptjs";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
+
+  if (!enforceCsrfOrigin(req, res)) {
+    return;
+  }
 
   const { token, password, userType } = req.body;
 

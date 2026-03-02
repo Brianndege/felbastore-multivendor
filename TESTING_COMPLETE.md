@@ -171,6 +171,17 @@ bunx prisma studio
 3. Ensure all environment variables are set in `.env`
 4. Rebuild: `rm -rf .next && bun run build && bun run dev`
 
+### Issue: Inventory scan job fails (`fetch failed` / endpoint unreachable)
+**Solution:**
+```bash
+# Validate env format without network call
+npm run jobs:inventory-scan:validate
+```
+1. If `APP_URL` is localhost, ensure app server is running before manual scan commands (`npm run jobs:inventory-scan:safe` or `npm run jobs:inventory-scan`).
+1. Prefer `npm run jobs:inventory-scan:safe` for manual scan runs.
+2. For CI/GitHub-hosted workflows, use a deployed HTTPS `APP_URL` (not localhost).
+3. Verify `INVENTORY_SCAN_JOB_KEY` matches between environment and workflow secrets.
+
 ## 📚 Documentation
 
 - **Quick Reference**: `QUICK_AUTH_TEST.md`

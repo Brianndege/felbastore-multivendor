@@ -1,0 +1,37 @@
+name: Inventory Env Validate
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/run-inventory-scan.cjs'
+      - 'package.json'
+      - '.env.example'
+      - '.github/workflows/inventory-env-validate.yml'
+      - '.github/workflows/inventory-ops-smoke-gate.yml'
+  workflow_dispatch:
+
+jobs:
+  inventory-env-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate inventory scan env configuration
+        env:
+          APP_URL: https://example.com
+          INVENTORY_SCAN_JOB_KEY: ci-dummy-job-key
+          INVENTORY_SCAN_LOOKBACK_HOURS: '24'
+          INVENTORY_SCAN_MAX_PRODUCTS: '250'
+          INVENTORY_SCAN_REQUEST_TIMEOUT_MS: '20000'
+        run: npm run jobs:inventory-scan:validate

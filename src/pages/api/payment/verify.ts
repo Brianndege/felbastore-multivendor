@@ -3,10 +3,17 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import { verifyPayment } from "@/lib/payments";
+import { enforceCsrfOrigin } from "@/lib/csrf";
+import { enqueueOutboxEvent } from "@/lib/outbox";
+import { logger } from "@/lib/logger";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  if (!enforceCsrfOrigin(req, res)) {
+    return;
   }
 
   // We allow both authenticated and webhook requests
@@ -27,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     // Verify the payment with the provider
     const paymentResult = await verifyPayment(paymentId, paymentMethod);
-    console.log(`[Payment] Verification result for ${paymentId}:`, paymentResult.status);
+    logger.info(`[Payment] Verification result for ${paymentId}:`, paymentResult.status);
 
     if (paymentResult.success) {
       // Find the order with this payment ID
@@ -43,6 +50,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             paymentStatus: paymentResult.status === "SUCCESS" ? "paid" :
                           paymentResult.status === "FAILED" ? "failed" : "pending",
             status: paymentResult.status === "SUCCESS" ? "confirmed" : order.status,
+          },
+        });
+
+        await enqueueOutboxEvent({
+          topic: paymentResult.status === "SUCCESS" ? "payment.succeeded" : paymentResult.status === "FAILED" ? "payment.failed" : "payment.pending",
+          entityType: "order",
+          entityId: order.id,
+          payload: {
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            paymentId,
+            paymentMethod,
+            status: paymentResult.status,
+            verifiedAt: new Date().toISOString(),
           },
         });
 
@@ -127,7 +148,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                         paymentResult.status === "FAILED" ? "failed" : "pending"
         });
       } else {
-        console.warn(`[Payment] No order found for payment ID ${paymentId}`);
+        logger.warn(`[Payment] No order found for payment ID ${paymentId}`);
         return res.status(404).json({
           success: false,
           error: "Order not found for this payment"
@@ -141,7 +162,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
   } catch (error) {
-    console.error("[Payment] Verification error:", error);
+    logger.error("[Payment] Verification error:", error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : "Internal server error"
