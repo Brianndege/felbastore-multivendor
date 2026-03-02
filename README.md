@@ -126,6 +126,14 @@ Run both smoke checks sequentially (dev then start):
 npm run smoke:all
 ```
 
+Run full smoke checks including DB-dependent E2E flows (card checkout + vendor bulk upload):
+
+```bash
+RUN_DB_E2E=true npm run test:smoke
+```
+
+By default, `npm run test:smoke` skips DB-dependent E2E checks unless `RUN_DB_E2E=true` is set.
+
 ### Admin Access (Hidden Login)
 
 - Public login page (`/auth/login`) shows only Customer and Vendor options.
