@@ -19,6 +19,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+
+[functions."___netlify-server-handler"]
   external_node_modules = ["@prisma/client", "prisma"]
 
 [images]
