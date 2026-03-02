@@ -3,8 +3,6 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const { PrismaClient } = require('@prisma/client');
 
-const prisma = new PrismaClient();
-
 const loadEnvFile = (fileName) => {
   const filePath = path.join(process.cwd(), fileName);
   if (!fs.existsSync(filePath)) return;
@@ -24,12 +22,14 @@ const loadEnvFile = (fileName) => {
       value = value.slice(1, -1);
     }
 
-    if (!process.env[key]) process.env[key] = value;
+    process.env[key] = value;
   }
 };
 
 loadEnvFile('.env.local');
 loadEnvFile('.env');
+
+const prisma = new PrismaClient();
 
 const baseUrl = (process.env.NEXTAUTH_URL || 'http://localhost:3000').replace(/\/$/, '');
 const cookieJar = new Map();
