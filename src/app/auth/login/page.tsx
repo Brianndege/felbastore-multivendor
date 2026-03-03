@@ -40,6 +40,10 @@ function callbackByType(userType: UserType) {
   return "/account";
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [activeType, setActiveType] = useState<UserType>("user");
@@ -79,20 +83,24 @@ export default function LoginPage() {
       }
 
       if (err === "OAuthCallback") {
-        try {
-          const response = await fetch("/api/auth/session", {
-            credentials: "include",
-            cache: "no-store",
-          });
+        for (let attempt = 0; attempt < 5; attempt += 1) {
+          try {
+            const response = await fetch("/api/auth/session", {
+              credentials: "include",
+              cache: "no-store",
+            });
 
-          if (response.ok) {
-            const session = await response.json();
-            if (session?.user) {
-              router.replace(safeCallback);
-              return;
+            if (response.ok) {
+              const session = await response.json();
+              if (session?.user) {
+                router.replace(safeCallback);
+                return;
+              }
             }
+          } catch {
           }
-        } catch {
+
+          await sleep(350);
         }
       }
 
@@ -106,7 +114,7 @@ export default function LoginPage() {
         setCallbackUrl(callback);
       }
     }
-  }, []);
+  }, [router]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
