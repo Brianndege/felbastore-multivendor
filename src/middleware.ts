@@ -138,6 +138,27 @@ export async function middleware(request: NextRequest) {
 
   const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
 
+  if (
+    pathname === "/auth/login" ||
+    pathname === "/auth/otp" ||
+    pathname === "/auth/forgot-password" ||
+    pathname === "/auth/resend-verification" ||
+    pathname === "/auth/verify-email" ||
+    pathname === "/vendors/login"
+  ) {
+    if (token?.role === "admin") {
+      return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+    }
+
+    if (token?.role === "vendor") {
+      return NextResponse.redirect(new URL("/vendors/dashboard", request.url));
+    }
+
+    if (token?.role === "user") {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+  }
+
   if (pathname.startsWith("/auth/admin-login")) {
     if (token?.role === "admin") {
       return NextResponse.redirect(new URL("/admin/dashboard", request.url));
@@ -196,7 +217,7 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  if (pathname.startsWith("/admin")) {
+  if (pathname.startsWith("/admin") || pathname.startsWith("/dashboard/admin")) {
     if (!token || token.role !== "admin") {
       const loginUrl = new URL("/auth/login", request.url);
       loginUrl.searchParams.set("error", "unauthorized");
@@ -236,5 +257,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*", "/admin/:path*", "/auth/admin-login", "/vendors/dashboard/:path*", "/orders/:path*", "/checkout/:path*"],
+  matcher: ["/api/:path*", "/admin/:path*", "/dashboard/admin", "/dashboard/admin/:path*", "/auth/admin-login", "/auth/login", "/auth/otp", "/auth/forgot-password", "/auth/resend-verification", "/auth/verify-email", "/vendors/login", "/vendors/dashboard/:path*", "/orders/:path*", "/checkout/:path*"],
 };

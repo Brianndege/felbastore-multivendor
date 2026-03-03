@@ -4,8 +4,11 @@ import { sendVerificationEmail } from "@/lib/email";
 import { enforceCsrfOrigin } from "@/lib/csrf";
 import { enqueueOutboxEvent } from "@/lib/outbox";
 import { logger } from "@/lib/logger";
+import { DATABASE_CONFIGURATION_ERROR, hasValidDatabaseUrl, mapDatabaseError } from "@/lib/database-guard";
+import { validateStrongPassword } from "@/lib/auth/password-policy";
+import { createEmailVerificationToken } from "@/lib/auth/token-service";
+import { EMAIL_VERIFICATION_TTL_MS } from "@/lib/auth/constants";
 import bcrypt from "bcryptjs";
-import crypto from "crypto";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -15,6 +18,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (!enforceCsrfOrigin(req, res)) {
     return;
+  }
+
+  if (!hasValidDatabaseUrl()) {
+    logger.error("[registerVendor] Invalid DATABASE_URL configuration");
+    return res.status(503).json({ code: "DATABASE_NOT_CONFIGURED", message: DATABASE_CONFIGURATION_ERROR });
   }
 
   logger.info('[registerVendor] Vendor registration attempt started');
@@ -28,6 +36,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
+  const passwordValidation = validateStrongPassword(password);
+  if (!passwordValidation.valid) {
+    return res.status(400).json({
+      code: "WEAK_PASSWORD",
+      message: "Password does not meet security requirements.",
+      details: passwordValidation.issues,
+    });
+  }
+
   try {
     logger.info('[registerVendor] Checking for existing vendor with email:', email);
     const existing = await prisma.vendor.findUnique({ where: { email } });
@@ -38,7 +55,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     logger.info('[registerVendor] Hashing password...');
-    const hashed = await bcrypt.hash(password, 10);
+    const hashed = await bcrypt.hash(password, 12);
 
     logger.info('[registerVendor] Creating new vendor in database...');
     const newVendor = await prisma.vendor.create({
@@ -53,21 +70,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     logger.info('[registerVendor] Vendor created successfully with ID:', newVendor.id);
 
-    // Generate verification token and send email
-    const token = crypto.randomBytes(32).toString("hex");
-    const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
-
-    await prisma.emailVerificationToken.create({
-      data: {
-        email,
-        token,
-        expires,
-        vendorId: newVendor.id,
-      },
+    const verificationToken = await createEmailVerificationToken({
+      email,
+      userType: "vendor",
+      accountId: newVendor.id,
+      ttlMs: EMAIL_VERIFICATION_TTL_MS,
     });
 
     logger.info('[registerVendor] Sending verification email to:', email);
-    await sendVerificationEmail(email, token, "vendor");
+    await sendVerificationEmail(
+      email,
+      {
+        selector: verificationToken.selector,
+        secret: verificationToken.secret,
+        expires: verificationToken.signedExpires,
+        signature: verificationToken.signature,
+      },
+      "vendor"
+    );
 
     logger.info('[registerVendor] Vendor registration completed successfully');
 
@@ -105,16 +125,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     // Return a more specific error message
     let errorMessage = "Failed to create vendor account. Please try again.";
 
-    if (err instanceof Error) {
-      if (err.message.includes('Unique constraint')) {
-        errorMessage = "A vendor account with this email already exists.";
-      } else if ((err as any).code === 'P2002') {
-        errorMessage = "A vendor account with this email already exists.";
-      } else if (err.message.includes('connection')) {
-        errorMessage = "Database connection error. Please try again later.";
-      } else {
-        errorMessage = err.message;
-      }
+    const dbErrorMessage = mapDatabaseError(err);
+    if (dbErrorMessage) {
+      errorMessage = dbErrorMessage;
+    } else if (err instanceof Error) {
+      errorMessage = err.message;
     }
 
     return res.status(500).json({ code: "VENDOR_REGISTRATION_FAILED", message: errorMessage });

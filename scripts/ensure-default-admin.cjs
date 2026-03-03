@@ -1,15 +1,29 @@
 const bcrypt = require("bcryptjs");
+const crypto = require("crypto");
 const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
-const email = process.env.ADMIN_DEFAULT_EMAIL || "admin@felbastore.local";
-const password = process.env.ADMIN_DEFAULT_PASSWORD || "Admin@12345!";
+const email = (process.env.ADMIN_DEFAULT_EMAIL || "").trim().toLowerCase();
+const passwordFromEnv = process.env.ADMIN_DEFAULT_PASSWORD || "";
 const name = process.env.ADMIN_DEFAULT_NAME || "Platform Admin";
+
+function generateStrongPassword() {
+  return `${crypto.randomBytes(12).toString("base64url")}!A9`;
+}
 
 (async () => {
   try {
-    const passwordHash = await bcrypt.hash(password, 10);
+    if (process.env.NODE_ENV === "production" && !email) {
+      throw new Error("ADMIN_DEFAULT_EMAIL is required in production.");
+    }
+
+    if (!email) {
+      throw new Error("ADMIN_DEFAULT_EMAIL is required.");
+    }
+
+    const bootstrapPassword = passwordFromEnv || generateStrongPassword();
+    const passwordHash = await bcrypt.hash(bootstrapPassword, 10);
 
     const user = await prisma.user.upsert({
       where: { email },
@@ -18,6 +32,7 @@ const name = process.env.ADMIN_DEFAULT_NAME || "Platform Admin";
         password: passwordHash,
         role: "admin",
         isActive: true,
+        mustChangePassword: true,
       },
       create: {
         name,
@@ -25,6 +40,7 @@ const name = process.env.ADMIN_DEFAULT_NAME || "Platform Admin";
         password: passwordHash,
         role: "admin",
         isActive: true,
+        mustChangePassword: true,
       },
       select: {
         id: true,
@@ -37,8 +53,10 @@ const name = process.env.ADMIN_DEFAULT_NAME || "Platform Admin";
     console.log(`email=${user.email}`);
     console.log(`role=${user.role}`);
     console.log("adminLoginPath=/auth/admin-login");
-    if (!process.env.ADMIN_DEFAULT_PASSWORD) {
-      console.warn("WARNING: Using fallback default admin password. Set ADMIN_DEFAULT_PASSWORD for production.");
+    console.log("mustChangePassword=true");
+    if (!passwordFromEnv) {
+      console.log(`temporaryPassword=${bootstrapPassword}`);
+      console.warn("WARNING: Temporary admin password was generated. Rotate immediately after first login.");
     }
   } catch (error) {
     console.error("FAILED_TO_ENSURE_DEFAULT_ADMIN:", error?.message || error);

@@ -1,8 +1,22 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { prisma } from "@/lib/prisma";
+import { z } from "zod";
 import { sendPasswordResetEmail } from "@/lib/email";
 import { enforceCsrfOrigin } from "@/lib/csrf";
-import crypto from "crypto";
+import { findAccountByEmail } from "@/lib/auth/account";
+import { createPasswordResetToken } from "@/lib/auth/token-service";
+import { logAuthAuditEvent } from "@/lib/auth/audit";
+import { applyAuthRateLimit } from "@/lib/auth/rate-limit";
+import { verifyCaptchaToken } from "@/lib/auth/captcha";
+import { GENERIC_ACCOUNT_MESSAGE, PASSWORD_RESET_RATE_LIMIT, PASSWORD_RESET_TTL_MS } from "@/lib/auth/constants";
+import { getClientIpAddress, hashIdentifier } from "@/lib/auth/security";
+
+const requestSchema = z.object({
+  email: z.string().email(),
+  userType: z.enum(["user", "vendor"]),
+  captchaToken: z.string().optional(),
+});
+
+const GENERIC_RESPONSE = { message: "If an account exists, we’ve sent a reset link." };
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
@@ -11,62 +25,72 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { email, userType } = req.body;
+  const parsed = requestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(200).json(GENERIC_RESPONSE);
+  }
 
-  if (!email || !userType) {
-    return res.status(400).json({ error: "Missing required fields." });
+  const { email, userType, captchaToken } = parsed.data;
+  const normalizedEmail = email.trim().toLowerCase();
+  const ipAddress = getClientIpAddress(req.headers["x-forwarded-for"]);
+  const rateKey = `forgot-password:${ipAddress}:${hashIdentifier(normalizedEmail)}`;
+  const limit = applyAuthRateLimit(rateKey, PASSWORD_RESET_RATE_LIMIT);
+
+  if (!limit.allowed) {
+    await logAuthAuditEvent({
+      event: "password_reset_requested",
+      status: "blocked",
+      email: normalizedEmail,
+      userType,
+      ipAddress,
+      userAgent: req.headers["user-agent"] || "",
+      metadata: { reason: "rate_limited" },
+    });
+
+    return res.status(429).json({ message: GENERIC_ACCOUNT_MESSAGE, requiresCaptcha: true });
+  }
+
+  if (limit.requiresCaptcha) {
+    const captcha = await verifyCaptchaToken(captchaToken, ipAddress);
+    if (!captcha.success) {
+      return res.status(429).json({ message: GENERIC_ACCOUNT_MESSAGE, requiresCaptcha: true });
+    }
   }
 
   try {
-    // Check if user exists
-    let user = null;
-    if (userType === "user") {
-      user = await prisma.user.findUnique({ where: { email } });
-    } else if (userType === "vendor") {
-      user = await prisma.vendor.findUnique({ where: { email } });
+    const account = await findAccountByEmail(userType, normalizedEmail);
+
+    if (account) {
+      const resetToken = await createPasswordResetToken({
+        email: normalizedEmail,
+        userType,
+        accountId: account.id,
+        ttlMs: PASSWORD_RESET_TTL_MS,
+      });
+
+      await sendPasswordResetEmail(
+        normalizedEmail,
+        {
+          selector: resetToken.selector,
+          secret: resetToken.secret,
+          expires: resetToken.signedExpires,
+          signature: resetToken.signature,
+        },
+        userType
+      );
     }
 
-    // Always return success to prevent email enumeration
-    if (!user) {
-      return res.status(200).json({ message: "If an account with that email exists, we've sent a password reset link." });
-    }
-
-    // Generate reset token
-    const token = crypto.randomBytes(32).toString("hex");
-    const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
-
-    // Delete any existing reset tokens for this user
-    await prisma.passwordResetToken.deleteMany({
-      where: {
-        email,
-        OR: [
-          { userId: userType === "user" ? user.id : undefined },
-          { vendorId: userType === "vendor" ? user.id : undefined },
-        ],
-      },
+    await logAuthAuditEvent({
+      event: "password_reset_requested",
+      status: "success",
+      email: normalizedEmail,
+      userType,
+      ipAddress,
+      userAgent: req.headers["user-agent"] || "",
     });
 
-    // Save new token to database
-    await prisma.passwordResetToken.create({
-      data: {
-        email,
-        token,
-        expires,
-        userId: userType === "user" ? user.id : null,
-        vendorId: userType === "vendor" ? user.id : null,
-      },
-    });
-
-    // Send reset email
-    const emailResult = await sendPasswordResetEmail(email, token, userType);
-
-    if (!emailResult.success) {
-      console.error("Failed to send reset email");
-    }
-
-    return res.status(200).json({ message: "If an account with that email exists, we've sent a password reset link." });
-  } catch (error) {
-    console.error("Password reset error:", error);
-    return res.status(500).json({ error: "Internal server error." });
+    return res.status(200).json(GENERIC_RESPONSE);
+  } catch {
+    return res.status(200).json(GENERIC_RESPONSE);
   }
 }

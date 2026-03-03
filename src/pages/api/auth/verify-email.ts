@@ -1,6 +1,18 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { prisma } from "@/lib/prisma";
 import { enforceCsrfOrigin } from "@/lib/csrf";
+import { z } from "zod";
+import { consumeEmailVerificationToken } from "@/lib/auth/token-service";
+import { markEmailVerified } from "@/lib/auth/account";
+import { logAuthAuditEvent } from "@/lib/auth/audit";
+import { getClientIpAddress } from "@/lib/auth/security";
+
+const requestSchema = z.object({
+  selector: z.string().min(8),
+  token: z.string().min(16),
+  expires: z.string().min(1),
+  signature: z.string().min(16),
+  userType: z.enum(["user", "vendor"]),
+});
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
@@ -9,53 +21,45 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { token, userType } = req.body;
-
-  if (!token || !userType) {
-    return res.status(400).json({ error: "Missing required fields." });
+  const parsed = requestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid or expired verification link." });
   }
 
+  const { selector, token, expires, signature, userType } = parsed.data;
+  const ipAddress = getClientIpAddress(req.headers["x-forwarded-for"]);
+
   try {
-    // Find verification token
-    const verificationToken = await prisma.emailVerificationToken.findUnique({
-      where: { token },
+    const verificationToken = await consumeEmailVerificationToken({
+      selector,
+      secret: token,
+      expires,
+      signature,
     });
 
     if (!verificationToken) {
-      return res.status(400).json({ error: "Invalid token." });
+      return res.status(400).json({ error: "Invalid or expired verification link." });
     }
 
-    if (verificationToken.expires < new Date()) {
-      // Delete expired token
-      await prisma.emailVerificationToken.delete({
-        where: { token },
-      });
-      return res.status(400).json({ error: "Token expired." });
-    }
-
-    // Verify email based on user type
     if (userType === "user" && verificationToken.userId) {
-      await prisma.user.update({
-        where: { id: verificationToken.userId },
-        data: { emailVerified: new Date() },
-      });
+      await markEmailVerified("user", verificationToken.userId);
     } else if (userType === "vendor" && verificationToken.vendorId) {
-      await prisma.vendor.update({
-        where: { id: verificationToken.vendorId },
-        data: { emailVerified: new Date() },
-      });
+      await markEmailVerified("vendor", verificationToken.vendorId);
     } else {
-      return res.status(400).json({ error: "Invalid user type or token." });
+      return res.status(400).json({ error: "Invalid or expired verification link." });
     }
 
-    // Delete used token
-    await prisma.emailVerificationToken.delete({
-      where: { token },
+    await logAuthAuditEvent({
+      event: "email_verified",
+      status: "success",
+      email: verificationToken.email,
+      userType,
+      ipAddress,
+      userAgent: req.headers["user-agent"] || "",
     });
 
     return res.status(200).json({ message: "Email verified successfully." });
-  } catch (error) {
-    console.error("Email verification error:", error);
-    return res.status(500).json({ error: "Internal server error." });
+  } catch {
+    return res.status(500).json({ error: "Unable to verify email right now." });
   }
 }

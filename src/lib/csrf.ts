@@ -59,6 +59,12 @@ export function enforceCsrfOrigin(req: NextApiRequest, res: NextApiResponse): bo
 
   const origin = req.headers.origin;
   const referer = req.headers.referer;
+  const secFetchSiteHeader = req.headers["sec-fetch-site"];
+  const secFetchSite = Array.isArray(secFetchSiteHeader) ? secFetchSiteHeader[0] : secFetchSiteHeader;
+
+  if (secFetchSite && ["same-origin", "same-site", "none"].includes(secFetchSite.toLowerCase())) {
+    return true;
+  }
 
   if (matchesAllowedHost(origin, allowedHosts) || matchesAllowedHost(referer, allowedHosts)) {
     return true;

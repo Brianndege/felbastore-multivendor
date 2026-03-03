@@ -9,19 +9,22 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 type UserType = "user" | "vendor";
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
-  MISSING_CREDENTIALS: "Please enter both email and password.",
-  INVALID_USER_TYPE: "Invalid account type selected.",
-  USER_NOT_FOUND: "No customer account found with this email.",
-  VENDOR_NOT_FOUND: "No vendor account found with this email.",
-  PASSWORD_NOT_SET: "Password login is not available for this account.",
-  INVALID_PASSWORD: "Incorrect password.",
-  USER_ROLE_MISMATCH: "Use the correct account type to sign in.",
+  INVALID_LOGIN: "Invalid credentials.",
+  VERIFY_EMAIL_REQUIRED: "Please verify your email before signing in.",
+  INVALID_OTP: "Invalid one-time code.",
+  OTP_EXPIRED: "Your one-time code expired. Request a new code.",
+  OTP_LOCKED: "Too many failed OTP attempts. Please wait and try again.",
+  OAUTH_ROLE_CONFLICT: "This email is already used by a vendor account. Use vendor login instead.",
+  OAuthAccountNotLinked: "This email is already registered with password login. Sign in with your password first, then link Google from account settings.",
+  OAuthCallback: "Google sign-in could not be completed. Please try again.",
+  PASSWORD_CHANGE_REQUIRED: "Password reset required before admin access.",
   unauthorized: "You are not authorized to access that page.",
-  CredentialsSignin: "Invalid email/password combination.",
+  CredentialsSignin: "Sign in failed. Check your credentials and try again.",
 };
 
 function getAuthErrorMessage(errorCode?: string | null) {
@@ -39,6 +42,8 @@ export default function LoginPage() {
   const [activeType, setActiveType] = useState<UserType>("user");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const debouncedEmail = useDebouncedValue(email, 300);
+  const [callbackUrl, setCallbackUrl] = useState("/");
   const router = useRouter();
 
   useEffect(() => {
@@ -53,6 +58,13 @@ export default function LoginPage() {
     if (err) {
       toast.error(getAuthErrorMessage(err));
     }
+
+    const callback = params.get("callbackUrl");
+    if (callback) {
+      if (callback.startsWith("/") && !callback.startsWith("//")) {
+        setCallbackUrl(callback);
+      }
+    }
   }, []);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -60,25 +72,52 @@ export default function LoginPage() {
     setIsLoading(true);
 
     try {
-      const callbackUrl = callbackByType(activeType);
+      const targetUrl = callbackUrl || callbackByType(activeType);
       const result = await signIn("credentials", {
         email,
         password,
         userType: activeType,
         redirect: false,
-        callbackUrl,
+        callbackUrl: targetUrl,
       });
 
       if (result?.error) {
+        if (result.error.startsWith("OTP_REQUIRED:")) {
+          const challengeId = result.error.split(":")[1] || "";
+          const params = new URLSearchParams({
+            mode: "verify-login",
+            email,
+            userType: activeType,
+            challengeId,
+          });
+          router.push(`/auth/otp?${params.toString()}`);
+          return;
+        }
+
+        if (result.error === "PASSWORD_CHANGE_REQUIRED") {
+          const params = new URLSearchParams({ email, reason: "password_change_required" });
+          router.push(`/auth/forgot-password?${params.toString()}`);
+          return;
+        }
+
         toast.error(getAuthErrorMessage(result.error));
         return;
       }
 
       toast.success("Login successful!");
-      router.push(result?.url || callbackUrl);
+      router.push(result?.url || targetUrl);
       router.refresh();
     } catch {
       toast.error("An error occurred during login");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      await signIn("google", { callbackUrl: callbackUrl || "/" });
     } finally {
       setIsLoading(false);
     }
@@ -121,6 +160,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                 />
+                {email !== debouncedEmail && <p className="text-xs text-muted-foreground">Validating input…</p>}
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
@@ -139,6 +179,24 @@ export default function LoginPage() {
               <Button type="submit" className="w-full" disabled={isLoading}>
                 {isLoading ? "Signing in..." : "Sign In"}
               </Button>
+
+              {activeType === "user" && (
+                <Button type="button" className="w-full" variant="outline" onClick={() => void handleGoogleSignIn()} disabled={isLoading}>
+                  Continue with Google
+                </Button>
+              )}
+
+              <div className="flex w-full flex-col gap-1 text-center text-sm text-gray-500">
+                <Link href="/auth/forgot-password" className="text-violet-600 hover:underline">
+                  Forgot password?
+                </Link>
+                <Link href="/auth/otp" className="text-violet-600 hover:underline">
+                  Sign in with email OTP
+                </Link>
+                <Link href="/auth/resend-verification" className="text-violet-600 hover:underline">
+                  Resend verification email
+                </Link>
+              </div>
 
               {activeType === "user" && (
                 <p className="text-center text-sm text-gray-500">

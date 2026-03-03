@@ -8,6 +8,7 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 enum PaymentMethodKind {
@@ -29,6 +30,34 @@ enum CoverageMode {
   polygon
 }
 
+enum ProductType {
+  vendor
+  affiliate
+}
+
+enum ProductWorkflowStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+}
+
+enum AffiliateNetwork {
+  AMAZON_ASSOCIATES
+  CJ_AFFILIATE
+  SHAREASALE
+  RAKUTEN_ADVERTISING
+  IMPACT
+  AWIN
+  SHOPIFY
+  EBAY_PARTNER_NETWORK
+  WALMART_AFFILIATE
+  ALIEXPRESS_PORTALS
+  ETSY_AFFILIATE
+  ENVATO
+  CLICKBANK
+}
+
 // ----------------------
 // Auth & Tokens
 // ----------------------
@@ -36,7 +65,9 @@ model PasswordResetToken {
   id        String   @id @default(cuid())
   email     String
   token     String   @unique
+  tokenHash String?
   expires   DateTime
+  usedAt    DateTime?
   createdAt DateTime @default(now())
 
   user      User?    @relation(fields: [userId], references: [id])
@@ -50,7 +81,9 @@ model EmailVerificationToken {
   id        String   @id @default(cuid())
   email     String
   token     String   @unique
+  tokenHash String?
   expires   DateTime
+  usedAt    DateTime?
   createdAt DateTime @default(now())
 
   user      User?    @relation(fields: [userId], references: [id])
@@ -69,6 +102,7 @@ model User {
   email         String    @unique
   password      String?
   role          String    @default("user")
+  mustChangePassword Boolean @default(false)
   emailVerified DateTime?
   image         String?
   phone         String?
@@ -81,6 +115,7 @@ model User {
   preferences   String?   @db.Text
   lastLoginAt   DateTime?
   isActive      Boolean   @default(true)
+  sessionVersion Int      @default(0)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -95,6 +130,7 @@ model User {
   addresses         SavedAddress[]
   notifications     Notification[]
   analytics         UserAnalytics[]
+  otpChallenges     EmailOtpChallenge[]
 }
 
 // ----------------------
@@ -120,6 +156,7 @@ model Vendor {
   website       String?
   isVerified    Boolean  @default(false)
   isActive      Boolean  @default(true)
+  sessionVersion Int     @default(0)
   commissionRate Decimal @default(10.0) @db.Decimal(5, 2)
   lastLoginAt   DateTime?
   createdAt     DateTime @default(now())
@@ -134,6 +171,7 @@ model Vendor {
   inventoryAlerts   InventoryAlert[]
   deliveryZones     VendorDeliveryZone[]
   paymentMethods    VendorPaymentMethod[]
+  otpChallenges     EmailOtpChallenge[]
 }
 
 // ----------------------
@@ -172,6 +210,8 @@ model Session {
 model Product {
   id             String   @id @default(cuid())
   vendorId       String
+  productType    ProductType @default(vendor)
+  workflowStatus ProductWorkflowStatus @default(DRAFT)
   name           String
   description    String   @db.Text
   price          Decimal  @db.Decimal(10, 2)
@@ -189,6 +229,8 @@ model Product {
   status         String   @default("active")
   featured       Boolean  @default(false)
   isApproved     Boolean  @default(false)
+  isDummy        Boolean  @default(false)
+  createdBy      String?
   viewCount      Int      @default(0)
   soldCount      Int      @default(0)
   avgRating      Decimal? @db.Decimal(3, 2)
@@ -203,6 +245,9 @@ model Product {
   wishlistItems WishlistItem[]
   inventoryAlerts InventoryAlert[]
   paymentMethods ProductPaymentMethod[]
+  variants      ProductVariant[]
+  inventoryRecords InventoryRecord[]
+  searchIndexEntries ProductSearchIndex[]
 
   @@index([vendorId])
   @@index([category])
@@ -287,6 +332,8 @@ model Review {
   rating     Int
   comment    String?  @db.Text
   images     String[]
+  isDummy    Boolean  @default(false)
+  createdBy  String?
   isVerified Boolean  @default(false)
   helpfulCount Int    @default(0)
   createdAt  DateTime @default(now())
@@ -386,6 +433,43 @@ model OutboxEvent {
   @@index([topic, createdAt])
 }
 
+model EmailOtpChallenge {
+  id         String   @id @default(cuid())
+  challengeId String  @unique
+  email      String
+  userType   String
+  codeHash   String
+  expiresAt  DateTime
+  attempts   Int      @default(0)
+  maxAttempts Int     @default(5)
+  lockedUntil DateTime?
+  usedAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  user      User?    @relation(fields: [userId], references: [id])
+  userId    String?
+
+  vendor    Vendor?  @relation(fields: [vendorId], references: [id])
+  vendorId  String?
+
+  @@index([email, userType, createdAt])
+}
+
+model AuthAuditLog {
+  id        String   @id @default(cuid())
+  event     String
+  status    String
+  userType  String?
+  emailHash String?
+  ipHash    String?
+  userAgent String?
+  metadata  String?  @db.Text
+  createdAt DateTime @default(now())
+
+  @@index([event, createdAt])
+  @@index([status, createdAt])
+}
+
 // ----------------------
 // Inventory Alerts
 // ----------------------
@@ -455,4 +539,156 @@ model ProductPaymentMethod {
 
   @@unique([productId, vendorPaymentMethodId])
   @@index([productId])
+}
+
+model ProductVariant {
+  id        String   @id @default(cuid())
+  productId String
+  sku       String?
+  title     String
+  options   String?  @db.Text
+  price     Decimal? @db.Decimal(10, 2)
+  inventory Int      @default(0)
+  isDummy   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+}
+
+model InventoryRecord {
+  id          String   @id @default(cuid())
+  productId   String
+  quantity    Int
+  source      String?
+  note        String?
+  isDummy     Boolean  @default(false)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt])
+}
+
+model ProductSearchIndex {
+  id          String   @id @default(cuid())
+  productId   String
+  searchable  String   @db.Text
+  category    String?
+  updatedAt   DateTime @updatedAt
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId])
+  @@index([category])
+}
+
+model AffiliateProduct {
+  id                String           @id @default(cuid())
+  externalProductId String
+  title             String
+  description       String           @db.Text
+  externalUrl       String
+  affiliateNetwork  AffiliateNetwork
+  commissionRate    Decimal          @db.Decimal(5, 2)
+  imageUrl          String
+  price             Decimal          @db.Decimal(10, 2)
+  currency          String           @default("USD")
+  category          String
+  subcategory       String?
+  isSynced          Boolean          @default(false)
+  isActive          Boolean          @default(true)
+  featuredScore     Int              @default(0)
+  clickCount        Int              @default(0)
+  lastSyncedAt      DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  clicks AffiliateClick[]
+  conversions AffiliateConversion[]
+
+  @@unique([affiliateNetwork, externalProductId])
+  @@index([isActive, category])
+  @@index([featuredScore])
+}
+
+model AffiliateClick {
+  id                 String   @id @default(cuid())
+  affiliateProductId String
+  clickToken         String   @unique
+  ipHash             String?
+  userAgent          String?
+  referrer           String?
+  userId             String?
+  createdAt          DateTime @default(now())
+
+  affiliateProduct AffiliateProduct @relation(fields: [affiliateProductId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateProductId, createdAt])
+}
+
+model AffiliateConversion {
+  id                 String   @id @default(cuid())
+  affiliateProductId String
+  clickToken         String?
+  externalOrderId    String?
+  amount             Decimal? @db.Decimal(10, 2)
+  currency           String?  @default("USD")
+  status             String   @default("pending")
+  network            AffiliateNetwork
+  metadata           String?  @db.Text
+  convertedAt        DateTime?
+  createdAt          DateTime @default(now())
+
+  affiliateProduct AffiliateProduct @relation(fields: [affiliateProductId], references: [id], onDelete: Cascade)
+
+  @@index([affiliateProductId, createdAt])
+  @@index([network, status])
+}
+
+model AffiliateSyncRun {
+  id             String    @id @default(cuid())
+  network        AffiliateNetwork
+  mode           String
+  status         String
+  importedCount  Int       @default(0)
+  updatedCount   Int       @default(0)
+  failedCount    Int       @default(0)
+  error          String?   @db.Text
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  @@index([network, startedAt])
+}
+
+model AdminCleanupRun {
+  id                String   @id @default(cuid())
+  adminUserId       String
+  adminEmail        String
+  dryRun            Boolean  @default(true)
+  criteria          String?  @db.Text
+  removedProductIds String[]
+  removedCount      Int      @default(0)
+  startedAt         DateTime @default(now())
+  completedAt       DateTime?
+
+  backups AdminCleanupBackup[]
+
+  @@index([adminUserId, startedAt])
+}
+
+model AdminCleanupBackup {
+  id           String   @id @default(cuid())
+  runId        String
+  tableName    String
+  recordId     String
+  payload      String   @db.Text
+  createdAt    DateTime @default(now())
+
+  run AdminCleanupRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, tableName])
 }

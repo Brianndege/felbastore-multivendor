@@ -1,7 +1,21 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { prisma } from "@/lib/prisma";
 import { enforceCsrfOrigin } from "@/lib/csrf";
 import bcrypt from "bcryptjs";
+import { z } from "zod";
+import { consumePasswordResetToken } from "@/lib/auth/token-service";
+import { updateAccountPassword } from "@/lib/auth/account";
+import { validateStrongPassword } from "@/lib/auth/password-policy";
+import { logAuthAuditEvent } from "@/lib/auth/audit";
+import { getClientIpAddress } from "@/lib/auth/security";
+
+const requestSchema = z.object({
+  selector: z.string().min(8),
+  token: z.string().min(16),
+  expires: z.string().min(1),
+  signature: z.string().min(16),
+  password: z.string().min(12),
+  userType: z.enum(["user", "vendor"]),
+});
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
@@ -10,60 +24,55 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return;
   }
 
-  const { token, password, userType } = req.body;
-
-  if (!token || !password || !userType) {
-    return res.status(400).json({ error: "Missing required fields." });
+  const parsed = requestSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "Invalid or expired reset link." });
   }
 
-  if (password.length < 6) {
-    return res.status(400).json({ error: "Password must be at least 6 characters long." });
+  const { selector, token, expires, signature, password, userType } = parsed.data;
+  const ipAddress = getClientIpAddress(req.headers["x-forwarded-for"]);
+
+  const passwordCheck = validateStrongPassword(password);
+  if (!passwordCheck.valid) {
+    return res.status(400).json({
+      error: "Password does not meet security requirements.",
+      details: passwordCheck.issues,
+    });
   }
 
   try {
-    // Find reset token
-    const resetToken = await prisma.passwordResetToken.findUnique({
-      where: { token },
+    const resetToken = await consumePasswordResetToken({
+      selector,
+      secret: token,
+      expires,
+      signature,
     });
 
     if (!resetToken) {
-      return res.status(400).json({ error: "Invalid token." });
+      return res.status(400).json({ error: "Invalid or expired reset link." });
     }
 
-    if (resetToken.expires < new Date()) {
-      // Delete expired token
-      await prisma.passwordResetToken.delete({
-        where: { token },
-      });
-      return res.status(400).json({ error: "Token expired." });
-    }
-
-    // Hash new password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Update password based on user type
     if (userType === "user" && resetToken.userId) {
-      await prisma.user.update({
-        where: { id: resetToken.userId },
-        data: { password: hashedPassword },
-      });
+      await updateAccountPassword("user", resetToken.userId, hashedPassword);
     } else if (userType === "vendor" && resetToken.vendorId) {
-      await prisma.vendor.update({
-        where: { id: resetToken.vendorId },
-        data: { password: hashedPassword },
-      });
+      await updateAccountPassword("vendor", resetToken.vendorId, hashedPassword);
     } else {
-      return res.status(400).json({ error: "Invalid user type or token." });
+      return res.status(400).json({ error: "Invalid or expired reset link." });
     }
 
-    // Delete used token
-    await prisma.passwordResetToken.delete({
-      where: { token },
+    await logAuthAuditEvent({
+      event: "password_reset_completed",
+      status: "success",
+      email: resetToken.email,
+      userType,
+      ipAddress,
+      userAgent: req.headers["user-agent"] || "",
     });
 
     return res.status(200).json({ message: "Password reset successfully." });
-  } catch (error) {
-    console.error("Password reset error:", error);
-    return res.status(500).json({ error: "Internal server error." });
+  } catch {
+    return res.status(500).json({ error: "Unable to reset password right now." });
   }
 }

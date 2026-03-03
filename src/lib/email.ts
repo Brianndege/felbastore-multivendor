@@ -9,6 +9,13 @@ const {
   NEXTAUTH_URL,
 } = process.env;
 
+type AuthLinkPayload = {
+  selector: string;
+  secret: string;
+  expires: string;
+  signature: string;
+};
+
 function hasEmailConfig() {
   return Boolean(
     EMAIL_SERVER_HOST &&
@@ -34,7 +41,7 @@ const transporter = hasEmailConfig()
 
 export async function sendVerificationEmail(
   email: string,
-  token: string,
+  link: AuthLinkPayload,
   userType: "user" | "vendor"
 ) {
   if (!hasEmailConfig() || !transporter || !NEXTAUTH_URL) {
@@ -42,7 +49,7 @@ export async function sendVerificationEmail(
     return { success: false };
   }
 
-  const verificationUrl = `${NEXTAUTH_URL}/auth/verify-email?token=${token}&type=${userType}`;
+  const verificationUrl = `${NEXTAUTH_URL}/auth/verify-email?s=${encodeURIComponent(link.selector)}&t=${encodeURIComponent(link.secret)}&e=${encodeURIComponent(link.expires)}&sig=${encodeURIComponent(link.signature)}&type=${encodeURIComponent(userType)}`;
 
   try {
     await transporter.sendMail({
@@ -75,7 +82,7 @@ export async function sendVerificationEmail(
 
 export async function sendPasswordResetEmail(
   email: string,
-  token: string,
+  link: AuthLinkPayload,
   userType: "user" | "vendor"
 ) {
   if (!hasEmailConfig() || !transporter || !NEXTAUTH_URL) {
@@ -83,7 +90,7 @@ export async function sendPasswordResetEmail(
     return { success: false };
   }
 
-  const resetUrl = `${NEXTAUTH_URL}/auth/reset-password?token=${token}&type=${userType}`;
+  const resetUrl = `${NEXTAUTH_URL}/auth/reset-password?s=${encodeURIComponent(link.selector)}&t=${encodeURIComponent(link.secret)}&e=${encodeURIComponent(link.expires)}&sig=${encodeURIComponent(link.signature)}&type=${encodeURIComponent(userType)}`;
 
   try {
     await transporter.sendMail({
@@ -102,7 +109,7 @@ export async function sendPasswordResetEmail(
           </div>
           <p>If the button doesn't work, copy and paste this link into your browser:</p>
           <p style="word-break: break-all; color: #7c3aed;">${resetUrl}</p>
-          <p style="color: #666; font-size: 14px;">This link will expire in 1 hour.</p>
+          <p style="color: #666; font-size: 14px;">This link will expire in 15 minutes.</p>
           <p style="color: #666; font-size: 14px;">If you didn't request this password reset, please ignore this email.</p>
         </div>
       `,
@@ -111,6 +118,34 @@ export async function sendPasswordResetEmail(
     return { success: true };
   } catch (error) {
     console.error("Error sending password reset email:", error);
+    return { success: false };
+  }
+}
+
+export async function sendOtpEmail(email: string, code: string) {
+  if (!hasEmailConfig() || !transporter) {
+    return { success: false };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: EMAIL_FROM,
+      to: email,
+      subject: "Your login code",
+      html: `
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+          <h1 style="color: #7c3aed;">Your one-time login code</h1>
+          <p>Use this code to complete sign-in. The code expires in 10 minutes.</p>
+          <div style="text-align: center; margin: 24px 0;">
+            <div style="display: inline-block; letter-spacing: 8px; font-size: 32px; font-weight: bold; padding: 12px 20px; border: 1px solid #ddd; border-radius: 8px;">${code}</div>
+          </div>
+          <p style="color: #666; font-size: 14px;">If you did not request this code, ignore this email.</p>
+        </div>
+      `,
+    });
+
+    return { success: true };
+  } catch {
     return { success: false };
   }
 }
