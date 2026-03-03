@@ -68,11 +68,39 @@ export default function LoginPage() {
       setActiveType(type);
     }
 
-    if (err) {
-      toast.error(getAuthErrorMessage(err));
-    }
-
     const callback = params.get("callbackUrl");
+    const safeCallback = callback && callback.startsWith("/") && !callback.startsWith("//")
+      ? callback
+      : "/account";
+
+    const handleAuthError = async () => {
+      if (!err) {
+        return;
+      }
+
+      if (err === "OAuthCallback") {
+        try {
+          const response = await fetch("/api/auth/session", {
+            credentials: "include",
+            cache: "no-store",
+          });
+
+          if (response.ok) {
+            const session = await response.json();
+            if (session?.user) {
+              router.replace(safeCallback);
+              return;
+            }
+          }
+        } catch {
+        }
+      }
+
+      toast.error(getAuthErrorMessage(err));
+    };
+
+    void handleAuthError();
+
     if (callback) {
       if (callback.startsWith("/") && !callback.startsWith("//")) {
         setCallbackUrl(callback);
