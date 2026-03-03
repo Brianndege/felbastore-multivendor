@@ -60,15 +60,15 @@ When `DATABASE_URL` is unavailable or malformed in local Netlify CLI build conte
    npm run netlify:deploy:prod
    ```
 
-   If Netlify CLI fails with `Error while uploading blobs to deploy store`, run a direct deploy after removing generated deploy-scoped blobs:
+   If Netlify CLI fails with `Error while uploading blobs to deploy store`, clear deploy-scoped blobs and rerun a full Netlify build deploy:
 
    ```bash
    # PowerShell
    Remove-Item -Recurse -Force .netlify/deploy/v1/blobs/deploy
-   npx netlify deploy --prod --no-build --dir=.next --functions=.netlify/functions-internal
+   npx netlify deploy --prod --build
    ```
 
-   This preserves the already-built app artifacts and bypasses the transient blob-upload failure path.
+   Do not deploy `.next` directly with `--no-build --dir=.next` for this project; that can publish HTML without the expected `/_next/static/*` asset paths and cause production client-side exceptions.
 
    Remote-trigger production fallback:
 
