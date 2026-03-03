@@ -2,13 +2,14 @@ import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_CATEGORIES, getCategoryMetaBySlug, humanizeCategorySlug, toCategorySlug } from "@/lib/categories";
+import { VISIBLE_VENDOR_PRODUCT_WHERE } from "@/lib/products/visibility";
 
 export default async function CategoriesPage() {
   let products: Array<{ category: string | null }> = [];
 
   try {
     products = await prisma.product.findMany({
-      where: { status: "active", isApproved: true },
+      where: VISIBLE_VENDOR_PRODUCT_WHERE,
       select: { category: true },
     });
   } catch {

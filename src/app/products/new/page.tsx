@@ -1,30 +1,43 @@
-import { Card, CardContent } from "@/components/ui/card";
 import Link from "next/link";
+import { Card, CardContent } from "@/components/ui/card";
+import { prisma } from "@/lib/prisma";
+import { VISIBLE_VENDOR_PRODUCT_WHERE } from "@/lib/products/visibility";
 
-export default function NewArrivalsPage() {
+export const dynamic = "force-dynamic";
+
+export default async function NewArrivalsPage() {
+  const products = await prisma.product.findMany({
+    where: VISIBLE_VENDOR_PRODUCT_WHERE,
+    select: {
+      id: true,
+      name: true,
+      price: true,
+      images: true,
+      vendor: { select: { storeName: true, name: true } },
+    },
+    orderBy: [{ createdAt: "desc" }],
+    take: 24,
+  });
+
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-[#e16b22] mb-4">New Arrivals</h1>
-      <p className="mb-8 text-gray-600">Discover the freshest products recently added to Felbastore!</p>
+      <h1 className="mb-4 text-3xl font-bold text-[#e16b22]">New Arrivals</h1>
+      <p className="mb-8 text-gray-600">Recently published products from approved vendors.</p>
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {[1,2,3].map((id) => (
-          <Card key={id} className="overflow-hidden">
+        {products.map((product) => (
+          <Card key={product.id} className="overflow-hidden">
             <div className="aspect-video w-full bg-white">
-              <img
-                src={`https://source.unsplash.com/random/400x250?sig=${id+300}&product,new`}
-                alt="Product"
-                className="h-full w-full object-cover"
-              />
+              <img src={product.images[0] || "https://images.unsplash.com/photo-1557821552-17105176677c?w=500&auto=format&fit=crop&q=60"} alt={product.name} className="h-full w-full object-cover" />
             </div>
             <CardContent className="p-4">
-              <h3 className="font-semibold mb-1">Brand New Product {id}</h3>
-              <p className="text-xs text-gray-500 mb-2">Just Arrived</p>
-              <span className="text-lg text-[#e16b22] font-bold">$59.00</span>
+              <h3 className="mb-1 font-semibold">{product.name}</h3>
+              <p className="mb-2 text-xs text-gray-500">{product.vendor.storeName || product.vendor.name}</p>
+              <span className="text-lg font-bold text-[#e16b22]">${Number(product.price).toFixed(2)}</span>
+              <div className="mt-2 flex gap-2 text-xs">
+                <Link href={`/products/${product.id}`} className="text-[#e16b22] underline">View Details</Link>
+                <span className="ml-auto text-gray-500">New</span>
+              </div>
             </CardContent>
-            <div className="p-4 pt-0 flex gap-2">
-              <Link href="#" className="text-xs text-[#e16b22] underline">View Details</Link>
-              <span className="ml-auto text-xs text-gray-500">★5.0</span>
-            </div>
           </Card>
         ))}
       </div>

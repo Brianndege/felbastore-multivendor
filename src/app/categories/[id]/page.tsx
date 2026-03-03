@@ -9,6 +9,7 @@ import {
   humanizeCategorySlug,
   toCategorySlug,
 } from "@/lib/categories";
+import { VISIBLE_VENDOR_PRODUCT_WHERE } from "@/lib/products/visibility";
 
 // Generate static params for build
 export function generateStaticParams() {
@@ -23,7 +24,7 @@ export default async function CategoryPage({ params }: { params: Promise<{ id: s
 
   try {
     allProducts = await prisma.product.findMany({
-      where: { status: "active", isApproved: true },
+      where: VISIBLE_VENDOR_PRODUCT_WHERE,
       select: {
         id: true,
         name: true,

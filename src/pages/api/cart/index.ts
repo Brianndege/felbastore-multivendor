@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "../auth/[...nextauth]"; // adjust path if needed
 import { prisma } from "@/lib/prisma";
 import { enforceCsrfOrigin } from "@/lib/csrf";
+import { withVisibleVendorProductFilters } from "@/lib/products/visibility";
 
 export default async function handler(
   req: NextApiRequest,
@@ -53,7 +54,7 @@ export default async function handler(
       }
 
       const product = await prisma.product.findFirst({
-        where: { id: productId, status: "active", isApproved: true },
+        where: withVisibleVendorProductFilters({ id: productId }),
       });
 
       if (!product) {

@@ -1,5 +1,6 @@
 import type { PaymentMethodKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { withVisibleVendorProductFilters } from "@/lib/products/visibility";
 
 export type EligibilityItem = {
   productId: string;
@@ -84,11 +85,7 @@ export async function evaluateCheckoutEligibility(params: {
   const uniqueProductIds = [...new Set(items.map((item) => item.productId))];
 
   const products = await prisma.product.findMany({
-    where: {
-      id: { in: uniqueProductIds },
-      status: "active",
-      isApproved: true,
-    },
+    where: withVisibleVendorProductFilters({ id: { in: uniqueProductIds } }),
     include: {
       vendor: {
         include: {

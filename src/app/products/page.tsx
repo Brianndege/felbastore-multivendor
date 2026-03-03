@@ -1,4 +1,7 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,91 +14,72 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+
+type FeedProduct = {
+  id: string;
+  productType: "vendor" | "affiliate";
+  isDummy?: boolean;
+  name: string;
+  description: string;
+  image: string;
+  price: number;
+  category: string;
+  vendorLabel: string;
+  rating?: number;
+  affiliateNetwork?: string;
+};
 
 export default function ProductsPage() {
-  // Mock data for products
-  const products = [
-    {
-      id: "1",
-      name: "Premium Bluetooth Headphones",
-      price: 149.99,
-      description: "Noise-cancelling headphones with crystal clear sound",
-      image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8cHJvZHVjdHxlbnwwfHwwfHx8MA%3D%3D",
-      vendor: "AudioTech",
-      rating: 4.7,
-      category: "Electronics",
-    },
-    {
-      id: "2",
-      name: "Handcrafted Wooden Watch",
-      price: 89.99,
-      description: "Elegant timepiece made from sustainable bamboo",
-      image: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTF8fHByb2R1Y3R8ZW58MHx8MHx8fDA%3D",
-      vendor: "EcoWear",
-      rating: 4.4,
-      category: "Fashion",
-    },
-    {
-      id: "3",
-      name: "Organic Face Moisturizer",
-      price: 34.99,
-      description: "Natural ingredients for smooth and healthy skin",
-      image: "https://images.unsplash.com/photo-1556227834-09f1de7a7d14?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MjB8fHByb2R1Y3R8ZW58MHx8MHx8fDA%3D",
-      vendor: "NatureCare",
-      rating: 4.9,
-      category: "Beauty & Health",
-    },
-    {
-      id: "4",
-      name: "Smart Home Controller",
-      price: 129.99,
-      description: "Control your entire home with simple voice commands",
-      image: "https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTV8fHRlY2h8ZW58MHx8MHx8fDA%3D",
-      vendor: "TechInnovate",
-      rating: 4.2,
-      category: "Electronics",
-    },
-    {
-      id: "5",
-      name: "Stainless Steel Water Bottle",
-      price: 24.99,
-      description: "Eco-friendly bottle that keeps drinks cold for 24 hours",
-      image: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTV8fHdhdGVyJTIwYm90dGxlfGVufDB8fDB8fHww",
-      vendor: "EcoLiving",
-      rating: 4.6,
-      category: "Home & Garden",
-    },
-    {
-      id: "6",
-      name: "Handmade Ceramic Mug Set",
-      price: 39.99,
-      description: "Set of 4 uniquely crafted ceramic mugs",
-      image: "https://images.unsplash.com/photo-1595185584522-061e4a462262?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8MTB8fG11Z3N8ZW58MHx8MHx8fDA%3D",
-      vendor: "ArtisanCrafts",
-      rating: 4.8,
-      category: "Home & Garden",
-    },
-    {
-      id: "7",
-      name: "Portable Bluetooth Speaker",
-      price: 79.99,
-      description: "Waterproof speaker with 20-hour battery life",
-      image: "https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8Mnx8Ymx1ZXRvb3RoJTIwc3BlYWtlcnxlbnwwfHwwfHx8MA%3D%3D",
-      vendor: "AudioTech",
-      rating: 4.5,
-      category: "Electronics",
-    },
-    {
-      id: "8",
-      name: "Organic Loose Leaf Tea Set",
-      price: 29.99,
-      description: "Collection of premium organic teas from around the world",
-      image: "https://images.unsplash.com/photo-1564890369478-c89ca6d9cde9?w=500&auto=format&fit=crop&q=60&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxzZWFyY2h8M3x8dGVhfGVufDB8fDB8fHww",
-      vendor: "TeaHouse",
-      rating: 4.7,
-      category: "Food & Beverage",
-    },
-  ];
+  const [searchQuery, setSearchQuery] = useState("");
+  const [products, setProducts] = useState<FeedProduct[]>([]);
+  const [vendorCount, setVendorCount] = useState(0);
+  const [usingAffiliateFallback, setUsingAffiliateFallback] = useState(false);
+  const [featuredAffiliate, setFeaturedAffiliate] = useState<FeedProduct[]>([]);
+  const [trendingAffiliate, setTrendingAffiliate] = useState<FeedProduct[]>([]);
+  const [disclosure, setDisclosure] = useState("");
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
+  const debouncedQuery = useDebouncedValue(searchQuery, 400);
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search).get("q") || "";
+    setSearchQuery(query);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadProducts = async () => {
+      setIsLoadingProducts(true);
+      try {
+        const response = await fetch("/api/products/feed?take=30");
+        const data = await response.json();
+        if (!active) return;
+
+        const safeProducts = Array.isArray(data.products)
+          ? data.products.filter((item: FeedProduct) => !item?.isDummy)
+          : [];
+
+        setProducts(safeProducts);
+        setVendorCount(typeof data.vendorCount === "number" ? data.vendorCount : 0);
+        setUsingAffiliateFallback(Boolean(data.usingAffiliateFallback));
+        setFeaturedAffiliate(Array.isArray(data.featuredAffiliate) ? data.featuredAffiliate : []);
+        setTrendingAffiliate(Array.isArray(data.trendingAffiliate) ? data.trendingAffiliate : []);
+        setDisclosure(typeof data.disclosure === "string" ? data.disclosure : "");
+      } catch {
+        if (!active) return;
+        setProducts([]);
+        setVendorCount(0);
+      } finally {
+        if (active) setIsLoadingProducts(false);
+      }
+    };
+
+    void loadProducts();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Mock categories for the filter
   const categories = [
@@ -108,13 +92,44 @@ export default function ProductsPage() {
     "Food & Beverage",
   ];
 
+  const normalizedQuery = debouncedQuery.trim().toLowerCase();
+  const isSearching = searchQuery !== debouncedQuery;
+
+  const filteredProducts = useMemo(() => {
+    if (!normalizedQuery) return products;
+
+    return products.filter((product) =>
+      [product.name, product.description, product.vendorLabel, product.category, product.affiliateNetwork || ""]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+  }, [products, normalizedQuery]);
+
   return (
     <div className="container mx-auto px-4 py-4 md:py-8">
       {/* Page Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold">All Products</h1>
         <p className="text-gray-500">Browse our wide selection of products from trusted vendors</p>
+        {disclosure && (
+          <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            {disclosure}
+          </p>
+        )}
+        {usingAffiliateFallback && (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Vendor products are currently limited; partner products are shown as a fallback.
+          </p>
+        )}
       </div>
+
+      {usingAffiliateFallback && featuredAffiliate.length > 0 && (
+        <div className="mb-6 rounded-lg border bg-background p-4">
+          <h2 className="mb-2 text-lg font-semibold">Featured Partner Products</h2>
+          <p className="text-xs text-muted-foreground">Sold by Partner · External Store</p>
+        </div>
+      )}
 
       <div className="flex flex-col gap-6 lg:flex-row">
         {/* Filters Sidebar */}
@@ -123,9 +138,26 @@ export default function ProductsPage() {
             <div>
               <h3 className="mb-2 font-medium">Search</h3>
               <div className="relative">
-                <Input placeholder="Search products..." className="pr-8" />
+                <Input
+                  placeholder="Search products..."
+                  aria-label="Search products"
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="pr-16"
+                />
+                {searchQuery.trim().length > 0 && (
+                  <button
+                    type="button"
+                    className="absolute right-8 top-2 text-xs text-muted-foreground"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Clear product search"
+                  >
+                    ✕
+                  </button>
+                )}
                 <span className="absolute right-2 top-2.5">🔍</span>
               </div>
+              {isSearching && <p className="mt-1 text-xs text-muted-foreground">Searching...</p>}
             </div>
 
             <div>
@@ -203,7 +235,7 @@ export default function ProductsPage() {
         <div className="flex-1">
           {/* Sort Options */}
           <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-sm text-gray-500">Showing {products.length} products</p>
+            <p className="text-sm text-gray-500">Showing {filteredProducts.length} products · Live vendor products: {vendorCount}</p>
             <div className="flex w-full items-center gap-2 sm:w-auto">
               <span className="text-sm">Sort by:</span>
               <Select defaultValue="featured">
@@ -222,8 +254,21 @@ export default function ProductsPage() {
           </div>
 
           {/* Products */}
+          {isLoadingProducts ? (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              Loading products...
+            </div>
+          ) : filteredProducts.length === 0 ? (
+            <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+              <p>No products available yet.</p>
+              <div className="mt-3 mobile-stack flex flex-wrap justify-center gap-2">
+                <Button asChild className="touch-target" size="sm"><Link href="/vendors/dashboard/products">Start adding products</Link></Button>
+                <Button asChild className="touch-target" size="sm" variant="outline"><Link href="/vendors/register">Become a Vendor</Link></Button>
+              </div>
+            </div>
+          ) : (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {products.map((product) => (
+            {filteredProducts.map((product) => (
               <Card key={product.id} className="overflow-hidden">
                 <div className="aspect-[4/3] w-full overflow-hidden">
                   <img
@@ -235,31 +280,47 @@ export default function ProductsPage() {
                 <CardContent className="p-4">
                   <div className="mb-2 flex items-center justify-between">
                     <span className="text-xs font-medium text-gray-500">{product.category}</span>
-                    <div className="flex items-center text-xs text-yellow-400">
-                      <span>{product.rating}</span>
-                      <span className="ml-1">★</span>
-                    </div>
+                    {typeof product.rating === "number" ? (
+                      <div className="flex items-center text-xs text-yellow-400">
+                        <span>{product.rating}</span>
+                        <span className="ml-1">★</span>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] font-medium text-amber-700">Sold by Partner</span>
+                    )}
                   </div>
                   <h3 className="mb-1 line-clamp-1 font-medium">{product.name}</h3>
                   <p className="mb-3 line-clamp-2 text-xs text-gray-500">{product.description}</p>
                   <div className="flex items-center justify-between">
                     <p className="font-bold text-violet-600">${product.price.toFixed(2)}</p>
-                    <span className="text-xs text-gray-500">by {product.vendor}</span>
+                    <span className="text-xs text-gray-500">by {product.vendorLabel}</span>
                   </div>
+                  {product.productType === "affiliate" && (
+                    <p className="mt-1 text-[10px] text-muted-foreground">External Store · {product.affiliateNetwork}</p>
+                  )}
                 </CardContent>
                 <CardFooter className="p-4 pt-0">
                   <div className="mobile-stack flex w-full flex-wrap gap-2">
                     <Button asChild variant="outline" size="sm" className="touch-target flex-1">
-                      <Link href={`/products/${product.id}`}>View</Link>
+                      <Link href={product.productType === "affiliate" ? `/affiliate/${product.id}` : `/products/${product.id}`}>View</Link>
                     </Button>
-                    <Button size="sm" className="touch-target flex-1">
-                      Add to Cart
-                    </Button>
+                    {product.productType === "vendor" ? (
+                      <Button size="sm" className="touch-target flex-1">
+                        Add to Cart
+                      </Button>
+                    ) : (
+                      <Button asChild size="sm" className="touch-target flex-1">
+                        <Link href={`/api/affiliate/outbound/${product.id}`} rel="sponsored nofollow noopener" target="_blank">
+                          Visit Store
+                        </Link>
+                      </Button>
+                    )}
                   </div>
                 </CardFooter>
               </Card>
             ))}
           </div>
+          )}
 
           {/* Pagination */}
           <div className="mt-8 flex justify-center">
