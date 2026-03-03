@@ -6,6 +6,16 @@ on:
       - main
       - "**"
   pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy_target:
+        description: "Target deploy to run"
+        required: true
+        default: "production"
+        type: choice
+        options:
+          - production
+          - preview
 
 concurrency:
   group: netlify-deploy-${{ github.ref }}
@@ -13,7 +23,7 @@ concurrency:
 
 jobs:
   deploy-preview:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'preview')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -35,7 +45,7 @@ jobs:
         run: npx netlify deploy --build --json
 
   deploy-production:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -55,3 +65,25 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: npx netlify deploy --build --prod --json
+
+  smoke-auth-production:
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
+    needs: deploy-production
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run production auth smoke checks
+        env:
+          AUTH_SMOKE_BASE_URL: https://felbastore.co.ke
+        run: npm run smoke:auth:prod
