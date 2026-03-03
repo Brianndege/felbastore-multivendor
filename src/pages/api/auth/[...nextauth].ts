@@ -28,6 +28,34 @@ function ensureAuthSchemaCompatibility() {
       await prisma.$executeRawUnsafe(
         'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false'
       );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "lastLoginAt" TIMESTAMP(3)'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "image" TEXT'
+      );
+
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "access_token" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "refresh_token" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "expires_at" INTEGER'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "token_type" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "scope" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "id_token" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "session_state" TEXT'
+      );
     } catch (error) {
       logger.warn("[NextAuth] Could not apply auth schema compatibility guard", error);
     }
@@ -85,6 +113,18 @@ async function cleanupDisposableOAuthUser(userId?: string | null) {
   await prisma.user.delete({
     where: { id: user.id },
   });
+}
+
+async function logAuthAuditEventSafe(payload: Parameters<typeof logAuthAuditEvent>[0]) {
+  try {
+    await logAuthAuditEvent(payload);
+  } catch (error) {
+    logger.warn("[NextAuth] Failed to write auth audit event", {
+      event: payload.event,
+      status: payload.status,
+      reason: error instanceof Error ? error.message : "unknown_audit_error",
+    });
+  }
 }
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -451,7 +491,7 @@ export const authOptions: NextAuthOptions = {
               select: { id: true },
             });
 
-            await logAuthAuditEvent({
+            await logAuthAuditEventSafe({
               event: "oauth_login",
               status: "success",
               email: normalizedEmail,
@@ -477,7 +517,7 @@ export const authOptions: NextAuthOptions = {
 
           if (existingUser) {
             if (existingUser.role === "admin") {
-              await logAuthAuditEvent({
+              await logAuthAuditEventSafe({
                 event: "oauth_login",
                 status: "blocked",
                 email: normalizedEmail,
@@ -536,7 +576,7 @@ export const authOptions: NextAuthOptions = {
 
             await cleanupDisposableOAuthUser(user.id);
 
-            await logAuthAuditEvent({
+            await logAuthAuditEventSafe({
               event: "oauth_login",
               status: "success",
               email: normalizedEmail,
@@ -560,7 +600,7 @@ export const authOptions: NextAuthOptions = {
             picture: verifiedProfile.picture,
           });
 
-          await logAuthAuditEvent({
+          await logAuthAuditEventSafe({
             event: "oauth_login",
             status: "blocked",
             email: verifiedProfile.email,
@@ -574,23 +614,27 @@ export const authOptions: NextAuthOptions = {
 
           return `/auth/google-onboarding?token=${encodeURIComponent(onboardingToken)}`;
         } catch (error) {
+          const email = (user.email || "").trim().toLowerCase();
+
           logger.error("[NextAuth] Google callback failure", {
             providerAccountId: account.providerAccountId,
-            email: user.email,
+            email,
             reason: error instanceof Error ? error.message : "oauth_callback_failed",
           });
 
-          await logAuthAuditEvent({
-            event: "oauth_login",
-            status: "failure",
-            email: user.email.trim().toLowerCase(),
-            userType: "user",
-            metadata: {
-              provider: "google",
-              reason: error instanceof Error ? error.message : "oauth_callback_failed",
-              providerAccountId: account.providerAccountId,
-            },
-          });
+          if (email) {
+            await logAuthAuditEventSafe({
+              event: "oauth_login",
+              status: "failure",
+              email,
+              userType: "user",
+              metadata: {
+                provider: "google",
+                reason: error instanceof Error ? error.message : "oauth_callback_failed",
+                providerAccountId: account.providerAccountId,
+              },
+            });
+          }
           return "/auth/login?error=OAuthCallback";
         }
       }
