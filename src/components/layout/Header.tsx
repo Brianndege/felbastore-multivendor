@@ -55,6 +55,12 @@ export default function Header() {
     router.push("/products");
   };
 
+  const displayName = session?.user?.name || "User";
+
+  const handleLogout = () => {
+    void signOut({ callbackUrl: "/" });
+  };
+
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="container mx-auto px-4">
@@ -149,65 +155,68 @@ export default function Header() {
 
             {/* Account */}
             {session?.user ? (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
-                    <Avatar>
-                      <AvatarFallback>
-                        {session.user.name?.charAt(0) || "U"}
-                      </AvatarFallback>
-                    </Avatar>
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  {session.user.role === "admin" ? (
-                    <>
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin/dashboard">Admin Dashboard</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin/dashboard#users">Manage Users</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin/dashboard#vendors">Manage Vendors</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin/dashboard#products">Manage Products</Link>
-                      </DropdownMenuItem>
-                    </>
-                  ) : session.user.role === "vendor" ? (
-                    <>
-                      <DropdownMenuItem asChild>
-                        <Link href="/vendors/dashboard">Vendor Dashboard</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/vendors/dashboard/products">My Products</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/vendors/dashboard">My Orders</Link>
-                      </DropdownMenuItem>
-                    </>
-                  ) : (
-                    <>
-                      <DropdownMenuItem asChild>
-                        <Link href="/orders">My Account</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/orders">My Orders</Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild>
-                        <Link href="/products/featured">Wishlist</Link>
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuItem asChild>
-                    <Link href="/help">Settings</Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => signOut()}>
-                    Sign Out
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <div className="hidden items-center gap-2 sm:flex">
+                <span className="text-sm text-muted-foreground">Welcome, {displayName}</span>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" className="h-8 w-8 rounded-full p-0">
+                      <Avatar>
+                        <AvatarFallback>
+                          {session.user.name?.charAt(0) || "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {session.user.role === "admin" ? (
+                      <>
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/dashboard">Admin Dashboard</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/dashboard#users">Manage Users</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/dashboard#vendors">Manage Vendors</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/dashboard#products">Manage Products</Link>
+                        </DropdownMenuItem>
+                      </>
+                    ) : session.user.role === "vendor" ? (
+                      <>
+                        <DropdownMenuItem asChild>
+                          <Link href="/vendors/dashboard">Vendor Dashboard</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/vendors/dashboard/products">My Products</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/vendors/dashboard">My Orders</Link>
+                        </DropdownMenuItem>
+                      </>
+                    ) : (
+                      <>
+                        <DropdownMenuItem asChild>
+                          <Link href="/account">My Account</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/orders">My Orders</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/products/featured">Wishlist</Link>
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    <DropdownMenuItem asChild>
+                      <Link href="/help">Settings</Link>
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button variant="outline" size="sm" onClick={handleLogout}>
+                  Logout
+                </Button>
+              </div>
             ) : (
               <div className="hidden items-center gap-2 sm:flex">
                 <Button asChild variant="ghost" size="sm">
@@ -337,6 +346,15 @@ export default function Header() {
                   </Button>
                   <Button asChild className="w-full" onClick={closeMobileMenu}>
                     <Link href="/auth/register">Register</Link>
+                  </Button>
+                </div>
+              )}
+
+              {session?.user && (
+                <div className="mt-6 grid gap-2">
+                  <p className="px-3 text-sm text-muted-foreground">Welcome, {displayName}</p>
+                  <Button variant="outline" className="w-full" onClick={handleLogout}>
+                    Logout
                   </Button>
                 </div>
               )}

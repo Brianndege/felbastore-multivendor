@@ -37,7 +37,7 @@ function getAuthErrorMessage(errorCode?: string | null) {
 
 function callbackByType(userType: UserType) {
   if (userType === "vendor") return "/vendors/dashboard";
-  return "/";
+  return "/account";
 }
 
 export default function LoginPage() {
@@ -46,7 +46,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const debouncedEmail = useDebouncedValue(email, 300);
-  const [callbackUrl, setCallbackUrl] = useState("/");
+  const [callbackUrl, setCallbackUrl] = useState("/account");
   const router = useRouter();
 
   useEffect(() => {
@@ -121,7 +121,7 @@ export default function LoginPage() {
     setIsLoading(true);
     try {
       await signIn("google", {
-        callbackUrl: callbackUrl || "/",
+        callbackUrl: callbackUrl || "/account",
       });
     } catch {
       toast.error("Google sign-in could not be started. Please try again.");

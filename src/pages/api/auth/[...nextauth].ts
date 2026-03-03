@@ -42,7 +42,7 @@ function getPostLoginRedirect(role?: string | null) {
     return "/vendors/dashboard";
   }
 
-  return "/";
+  return "/account";
 }
 
 async function cleanupDisposableOAuthUser(userId?: string | null) {
