@@ -146,7 +146,6 @@ export const authOptions: NextAuthOptions = {
               email: true,
               password: true,
               role: true,
-              mustChangePassword: true,
               emailVerified: true,
               sessionVersion: true,
             },
@@ -232,19 +231,6 @@ export const authOptions: NextAuthOptions = {
           throw new Error(`OTP_REQUIRED:${challenge.challengeId}`);
         }
 
-        if (credentials.userType === "admin" && user.mustChangePassword) {
-          await logAuthAuditEvent({
-            event: "login_attempt",
-            status: "blocked",
-            email: normalizedEmail,
-            userType: "admin",
-            ipAddress,
-            userAgent,
-            metadata: { reason: "password_change_required" },
-          });
-          throw new Error("PASSWORD_CHANGE_REQUIRED");
-        }
-
         await logAuthAuditEvent({
           event: "login_attempt",
           status: "success",
@@ -255,7 +241,7 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (credentials.userType === "user") {
-          await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+          await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
         } else if (credentials.userType === "vendor") {
           await prisma.vendor.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
         }
@@ -267,7 +253,7 @@ export const authOptions: NextAuthOptions = {
           role: user.role,
           storeName: user.storeName || undefined,
           sessionVersion: user.sessionVersion || 0,
-          mustChangePassword: Boolean(user.mustChangePassword),
+          mustChangePassword: false,
         };
       },
     }),
@@ -347,7 +333,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (credentials.userType === "user") {
-          await prisma.user.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } });
+          await prisma.user.update({ where: { id: account.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
         } else {
           await prisma.vendor.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } });
         }
@@ -417,6 +403,7 @@ export const authOptions: NextAuthOptions = {
                 image: verifiedProfile.picture,
                 name: user.name || verifiedProfile.name,
               },
+              select: { id: true },
             });
 
             await logAuthAuditEvent({
@@ -466,6 +453,7 @@ export const authOptions: NextAuthOptions = {
                 emailVerified: new Date(),
                 lastLoginAt: new Date(),
               },
+              select: { id: true },
             });
 
             await prisma.account.upsert({
@@ -576,7 +564,6 @@ export const authOptions: NextAuthOptions = {
             id: true,
             role: true,
             sessionVersion: true,
-            mustChangePassword: true,
           },
         });
 
@@ -584,7 +571,7 @@ export const authOptions: NextAuthOptions = {
           token.id = dbUser.id;
           token.role = dbUser.role;
           token.sessionVersion = dbUser.sessionVersion || 0;
-          token.mustChangePassword = Boolean(dbUser.mustChangePassword);
+          token.mustChangePassword = false;
         }
       }
       return token;
