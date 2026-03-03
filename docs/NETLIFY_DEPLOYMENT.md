@@ -264,3 +264,20 @@ If a release fails:
 - API routes under `src/pages/api` are deployed as Netlify functions via the Next.js plugin.
 - Security headers, cache headers, and HTTPS redirect are configured in `netlify.toml`.
 - Runtime env validation is enforced in production by `src/lib/env.ts`.
+
+## Release Verification Log
+
+### 2026-03-03
+
+- Production deploy live: `69a69a55cce3d6709dc56022`
+- Git commit pushed: `347fbeb`
+- Chunk availability validated: homepage-referenced `/_next/static/chunks/*` scripts returned `200`
+- Route matrix validated:
+   - `GET /` → `200`
+   - `GET /products` → `200`
+   - `GET /categories` → `200`
+   - `GET /categories/electronics` → `200`
+   - `GET /auth/login` → `200`
+   - `GET /api/auth/providers` → `200`
+   - `GET /api/admin/orders/export` → `401` (expected protected behavior)
+- Auth smoke: `npm run smoke:auth:prod` passed (including anti-enumeration and rate-limit/captcha escalation assertions)
