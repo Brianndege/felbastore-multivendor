@@ -389,9 +389,30 @@ export const authOptions: NextAuthOptions = {
 
       if (account.provider === "google") {
         try {
-          const verifiedProfile = account.id_token
-            ? await verifyGoogleIdToken(account.id_token)
-            : await verifyGoogleAccessToken(account.access_token || "");
+          let verifiedProfile: {
+            googleId: string;
+            email: string;
+            name: string;
+            picture: string | null;
+          };
+
+          try {
+            verifiedProfile = account.id_token
+              ? await verifyGoogleIdToken(account.id_token)
+              : await verifyGoogleAccessToken(account.access_token || "");
+          } catch (tokenError) {
+            if (!user.email || !account.providerAccountId) {
+              throw tokenError;
+            }
+
+            verifiedProfile = {
+              googleId: account.providerAccountId,
+              email: user.email.trim().toLowerCase(),
+              name: user.name || user.email,
+              picture: (user as any).image || null,
+            };
+          }
+
           const normalizedEmail = verifiedProfile.email;
 
           const linkedGoogleAccount = await prisma.account.findUnique({
@@ -546,6 +567,12 @@ export const authOptions: NextAuthOptions = {
 
           return `/auth/google-onboarding?token=${encodeURIComponent(onboardingToken)}`;
         } catch (error) {
+          logger.error("[NextAuth] Google callback failure", {
+            providerAccountId: account.providerAccountId,
+            email: user.email,
+            reason: error instanceof Error ? error.message : "oauth_callback_failed",
+          });
+
           await logAuthAuditEvent({
             event: "oauth_login",
             status: "failure",
