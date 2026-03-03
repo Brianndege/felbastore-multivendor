@@ -13,9 +13,20 @@ type RateLimitEntry = {
 };
 
 const edgeApiRateLimitStore = new Map<string, RateLimitEntry>();
+const googleCallbackReplayStore = new Map<string, number>();
+
+const GOOGLE_CALLBACK_REPLAY_WINDOW_MS = 5 * 60_000;
 
 function getRateLimitStore() {
   return edgeApiRateLimitStore;
+}
+
+function pruneGoogleCallbackReplayStore(now: number) {
+  for (const [code, seenAt] of googleCallbackReplayStore.entries()) {
+    if (now - seenAt > GOOGLE_CALLBACK_REPLAY_WINDOW_MS) {
+      googleCallbackReplayStore.delete(code);
+    }
+  }
 }
 
 function getAllowedOrigins(request: NextRequest) {
@@ -89,6 +100,34 @@ export async function middleware(request: NextRequest) {
   const isLocalHost = host.startsWith("localhost") || host.startsWith("127.0.0.1");
 
   if (pathname.startsWith("/api")) {
+    if (pathname === "/api/auth/callback/google" && request.method === "GET") {
+      const oauthCode = request.nextUrl.searchParams.get("code");
+
+      if (oauthCode) {
+        const now = Date.now();
+        pruneGoogleCallbackReplayStore(now);
+
+        const previousSeenAt = googleCallbackReplayStore.get(oauthCode);
+        googleCallbackReplayStore.set(oauthCode, now);
+
+        if (previousSeenAt && now - previousSeenAt <= GOOGLE_CALLBACK_REPLAY_WINDOW_MS) {
+          const callbackToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+
+          if (callbackToken?.role === "admin") {
+            return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+          }
+
+          if (callbackToken?.role === "vendor" || callbackToken?.role === "both") {
+            return NextResponse.redirect(new URL("/vendors/dashboard", request.url));
+          }
+
+          if (callbackToken?.role === "user") {
+            return NextResponse.redirect(new URL("/account", request.url));
+          }
+        }
+      }
+    }
+
     const origin = request.headers.get("origin");
     const preflightResponse = new NextResponse(null, { status: 204 });
     const isAllowedOrigin = applyCorsHeaders(request, preflightResponse);
