@@ -140,6 +140,7 @@ export async function middleware(request: NextRequest) {
 
   if (
     pathname === "/auth/login" ||
+    pathname === "/auth/google-onboarding" ||
     pathname === "/auth/otp" ||
     pathname === "/auth/forgot-password" ||
     pathname === "/auth/resend-verification" ||
@@ -151,6 +152,10 @@ export async function middleware(request: NextRequest) {
     }
 
     if (token?.role === "vendor") {
+      return NextResponse.redirect(new URL("/vendors/dashboard", request.url));
+    }
+
+    if (token?.role === "both") {
       return NextResponse.redirect(new URL("/vendors/dashboard", request.url));
     }
 
@@ -232,7 +237,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    if (token.role !== "vendor") {
+    if (token.role !== "vendor" && token.role !== "both") {
       const homeUrl = new URL("/", request.url);
       homeUrl.searchParams.set("error", "unauthorized");
       return NextResponse.redirect(homeUrl);
@@ -246,7 +251,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    if (token.role !== "user") {
+    if (token.role !== "user" && token.role !== "both") {
       const homeUrl = new URL("/", request.url);
       homeUrl.searchParams.set("error", "unauthorized");
       return NextResponse.redirect(homeUrl);
@@ -257,5 +262,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/api/:path*", "/admin/:path*", "/dashboard/admin", "/dashboard/admin/:path*", "/auth/admin-login", "/auth/login", "/auth/otp", "/auth/forgot-password", "/auth/resend-verification", "/auth/verify-email", "/vendors/login", "/vendors/dashboard/:path*", "/orders/:path*", "/checkout/:path*"],
+  matcher: ["/api/:path*", "/admin/:path*", "/dashboard/admin", "/dashboard/admin/:path*", "/auth/admin-login", "/auth/login", "/auth/google-onboarding", "/auth/otp", "/auth/forgot-password", "/auth/resend-verification", "/auth/verify-email", "/vendors/login", "/vendors/dashboard/:path*", "/orders/:path*", "/checkout/:path*"],
 };

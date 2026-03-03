@@ -13,8 +13,60 @@ import { getClientIpAddress, hashIdentifier } from "@/lib/auth/security";
 import { logAuthAuditEvent } from "@/lib/auth/audit";
 import { createOtpChallenge, verifyOtpChallenge } from "@/lib/auth/otp-service";
 import { sendOtpEmail } from "@/lib/email";
+import { createGoogleOnboardingToken, verifyGoogleIdToken } from "@/lib/auth/google-oauth";
 
 const providers: NextAuthOptions["providers"] = [];
+
+function getPostLoginRedirect(role?: string | null) {
+  const normalizedRole = (role || "").toLowerCase();
+  if (normalizedRole === "vendor" || normalizedRole === "both") {
+    return "/vendors/dashboard";
+  }
+
+  return "/";
+}
+
+async function cleanupDisposableOAuthUser(userId?: string | null) {
+  if (!userId) {
+    return;
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: {
+      id: true,
+      password: true,
+      role: true,
+      createdAt: true,
+      _count: {
+        select: {
+          accounts: true,
+          sessions: true,
+          orders: true,
+          cartItems: true,
+          wishlistItems: true,
+          reviews: true,
+        },
+      },
+    },
+  });
+
+  if (!user) {
+    return;
+  }
+
+  const ageMs = Date.now() - user.createdAt.getTime();
+  const hasCommerceData = user._count.orders > 0 || user._count.cartItems > 0 || user._count.wishlistItems > 0 || user._count.reviews > 0;
+  const isDisposable = !user.password && user.role === "user" && ageMs < 5 * 60 * 1000 && !hasCommerceData;
+
+  if (!isDisposable) {
+    return;
+  }
+
+  await prisma.user.delete({
+    where: { id: user.id },
+  });
+}
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
   providers.push(
@@ -333,47 +385,166 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (account.provider === "google") {
-        const normalizedEmail = user.email.trim().toLowerCase();
-        const conflictingVendor = await prisma.vendor.findUnique({
-          where: { email: normalizedEmail },
-          select: { id: true },
-        });
+        try {
+          if (!account.id_token) {
+            return "/auth/login?error=OAuthCallback";
+          }
 
-        if (conflictingVendor) {
+          const verifiedProfile = await verifyGoogleIdToken(account.id_token);
+          const normalizedEmail = verifiedProfile.email;
+
+          const linkedGoogleAccount = await prisma.account.findUnique({
+            where: {
+              provider_providerAccountId: {
+                provider: "google",
+                providerAccountId: verifiedProfile.googleId,
+              },
+            },
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  role: true,
+                },
+              },
+            },
+          });
+
+          if (linkedGoogleAccount?.user) {
+            await prisma.user.update({
+              where: { id: linkedGoogleAccount.user.id },
+              data: {
+                emailVerified: new Date(),
+                lastLoginAt: new Date(),
+                image: verifiedProfile.picture,
+                name: user.name || verifiedProfile.name,
+              },
+            });
+
+            await logAuthAuditEvent({
+              event: "oauth_login",
+              status: "success",
+              email: normalizedEmail,
+              userType: linkedGoogleAccount.user.role === "vendor" ? "vendor" : "user",
+              metadata: {
+                provider: "google",
+                providerAccountId: account.providerAccountId,
+                mode: "linked_account",
+              },
+            });
+
+            return getPostLoginRedirect(linkedGoogleAccount.user.role);
+          }
+
+          const existingUser = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+            select: {
+              id: true,
+              role: true,
+              name: true,
+            },
+          });
+
+          if (existingUser) {
+            if (existingUser.role === "admin") {
+              await logAuthAuditEvent({
+                event: "oauth_login",
+                status: "blocked",
+                email: normalizedEmail,
+                userType: "admin",
+                metadata: {
+                  provider: "google",
+                  reason: "admin_google_login_blocked",
+                },
+              });
+              return "/auth/login?error=OAuthAccountNotLinked";
+            }
+
+            await prisma.user.update({
+              where: { id: existingUser.id },
+              data: {
+                name: existingUser.name || verifiedProfile.name,
+                image: verifiedProfile.picture,
+                emailVerified: new Date(),
+                lastLoginAt: new Date(),
+              },
+            });
+
+            await prisma.account.upsert({
+              where: {
+                provider_providerAccountId: {
+                  provider: "google",
+                  providerAccountId: verifiedProfile.googleId,
+                },
+              },
+              update: {
+                userId: existingUser.id,
+                type: account.type,
+                access_token: account.access_token,
+                refresh_token: account.refresh_token,
+                token_type: account.token_type,
+                expires_at: account.expires_at,
+                id_token: account.id_token,
+                scope: account.scope,
+                session_state: account.session_state,
+              },
+              create: {
+                userId: existingUser.id,
+                type: account.type,
+                provider: "google",
+                providerAccountId: verifiedProfile.googleId,
+                access_token: account.access_token,
+                refresh_token: account.refresh_token,
+                token_type: account.token_type,
+                expires_at: account.expires_at,
+                id_token: account.id_token,
+                scope: account.scope,
+                session_state: account.session_state,
+              },
+            });
+
+            await cleanupDisposableOAuthUser(user.id);
+
+            await logAuthAuditEvent({
+              event: "oauth_login",
+              status: "success",
+              email: normalizedEmail,
+              userType: existingUser.role === "vendor" ? "vendor" : "user",
+              metadata: {
+                provider: "google",
+                providerAccountId: account.providerAccountId,
+                mode: "email_linked",
+              },
+            });
+
+            return getPostLoginRedirect(existingUser.role);
+          }
+
+          await cleanupDisposableOAuthUser(user.id);
+
+          const onboardingToken = createGoogleOnboardingToken({
+            googleId: verifiedProfile.googleId,
+            email: verifiedProfile.email,
+            name: verifiedProfile.name,
+            picture: verifiedProfile.picture,
+          });
+
           await logAuthAuditEvent({
             event: "oauth_login",
             status: "blocked",
-            email: normalizedEmail,
+            email: verifiedProfile.email,
             userType: "user",
             metadata: {
               provider: "google",
-              reason: "vendor_email_conflict",
+              reason: "onboarding_required",
               providerAccountId: account.providerAccountId,
             },
           });
-          return "/auth/login?error=OAUTH_ROLE_CONFLICT";
-        }
 
-        if (user.id) {
-          await prisma.user.update({
-            where: { id: user.id },
-            data: {
-              emailVerified: new Date(),
-              lastLoginAt: new Date(),
-            },
-          });
+          return `/auth/google-onboarding?token=${encodeURIComponent(onboardingToken)}`;
+        } catch {
+          return "/auth/login?error=OAuthCallback";
         }
-
-        await logAuthAuditEvent({
-          event: "oauth_login",
-          status: "success",
-          email: normalizedEmail,
-          userType: "user",
-          metadata: {
-            provider: "google",
-            providerAccountId: account.providerAccountId,
-          },
-        });
       }
 
       return true;

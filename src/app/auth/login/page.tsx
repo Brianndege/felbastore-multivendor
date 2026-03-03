@@ -120,21 +120,10 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      const result = await signIn("google", {
+      await signIn("google", {
         callbackUrl: callbackUrl || "/",
-        redirect: false,
       });
-
-      if (result?.error) {
-        toast.error(getAuthErrorMessage(result.error));
-        return;
-      }
-
-      if (result?.url) {
-        router.push(result.url);
-        return;
-      }
-
+    } catch {
       toast.error("Google sign-in could not be started. Please try again.");
     } finally {
       setIsLoading(false);
