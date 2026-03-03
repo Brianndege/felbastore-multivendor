@@ -16,12 +16,15 @@ type UserType = "user" | "vendor";
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   INVALID_LOGIN: "Invalid credentials.",
   VERIFY_EMAIL_REQUIRED: "Please verify your email before signing in.",
+  EMAIL_DELIVERY_UNAVAILABLE: "We couldn't send your one-time code. Please try again shortly or use password reset.",
   INVALID_OTP: "Invalid one-time code.",
   OTP_EXPIRED: "Your one-time code expired. Request a new code.",
   OTP_LOCKED: "Too many failed OTP attempts. Please wait and try again.",
   OAUTH_ROLE_CONFLICT: "This email is already used by a vendor account. Use vendor login instead.",
+  OAuthSignin: "Google sign-in could not be started. Please try again.",
   OAuthAccountNotLinked: "This email is already registered with password login. Sign in with your password first, then link Google from account settings.",
   OAuthCallback: "Google sign-in could not be completed. Please try again.",
+  google: "Google sign-in is temporarily unavailable. Please try again shortly.",
   PASSWORD_CHANGE_REQUIRED: "Password reset required before admin access.",
   unauthorized: "You are not authorized to access that page.",
   CredentialsSignin: "Sign in failed. Check your credentials and try again.",
@@ -117,7 +120,22 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      await signIn("google", { callbackUrl: callbackUrl || "/" });
+      const result = await signIn("google", {
+        callbackUrl: callbackUrl || "/",
+        redirect: false,
+      });
+
+      if (result?.error) {
+        toast.error(getAuthErrorMessage(result.error));
+        return;
+      }
+
+      if (result?.url) {
+        router.push(result.url);
+        return;
+      }
+
+      toast.error("Google sign-in could not be started. Please try again.");
     } finally {
       setIsLoading(false);
     }

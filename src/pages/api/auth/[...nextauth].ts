@@ -151,7 +151,20 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (!challenge.throttled) {
-            await sendOtpEmail(normalizedEmail, challenge.code);
+            const mailResult = await sendOtpEmail(normalizedEmail, challenge.code);
+            if (!mailResult.success) {
+              await logAuthAuditEvent({
+                event: "otp_delivery",
+                status: "failure",
+                email: normalizedEmail,
+                userType: credentials.userType as "user" | "vendor",
+                ipAddress,
+                userAgent,
+                metadata: { reason: "email_send_failed_after_login" },
+              });
+
+              throw new Error("EMAIL_DELIVERY_UNAVAILABLE");
+            }
           }
 
           await logAuthAuditEvent({
