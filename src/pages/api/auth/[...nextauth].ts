@@ -1,4 +1,5 @@
 import NextAuth, { NextAuthOptions } from "next-auth";
+import type { NextApiRequest, NextApiResponse } from "next";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import FacebookProvider from "next-auth/providers/facebook";
@@ -16,6 +17,25 @@ import { sendOtpEmail } from "@/lib/email";
 import { createGoogleOnboardingToken, verifyGoogleAccessToken, verifyGoogleIdToken } from "@/lib/auth/google-oauth";
 
 const providers: NextAuthOptions["providers"] = [];
+let authSchemaCompatPromise: Promise<void> | null = null;
+
+function ensureAuthSchemaCompatibility() {
+  if (authSchemaCompatPromise) {
+    return authSchemaCompatPromise;
+  }
+
+  authSchemaCompatPromise = (async () => {
+    try {
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "mustChangePassword" BOOLEAN NOT NULL DEFAULT false'
+      );
+    } catch (error) {
+      logger.warn("[NextAuth] Could not apply auth schema compatibility guard", error);
+    }
+  })();
+
+  return authSchemaCompatPromise;
+}
 
 function getPostLoginRedirect(role?: string | null) {
   const normalizedRole = (role || "").toLowerCase();
@@ -639,4 +659,9 @@ export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET,
 };
 
-export default NextAuth(authOptions);
+const nextAuthHandler = NextAuth(authOptions);
+
+export default async function authHandler(req: NextApiRequest, res: NextApiResponse) {
+  await ensureAuthSchemaCompatibility();
+  return nextAuthHandler(req, res);
+}
