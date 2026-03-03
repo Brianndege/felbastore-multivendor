@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 type HealthResponse = {
   success: boolean;
@@ -47,6 +48,12 @@ type ModerationResponse = {
   page: number;
   pageSize: number;
   totalPages: number;
+};
+
+type OverviewMetrics = {
+  activeVendors: number;
+  productsLive: number;
+  pendingApprovals: number;
 };
 
 type ProductActivity = {
@@ -141,6 +148,7 @@ export default function AdminDashboardPage() {
   const [products, setProducts] = useState<ModerationProduct[]>([]);
   const [activities, setActivities] = useState<ProductActivity[]>([]);
   const [pendingCount, setPendingCount] = useState(0);
+  const [overviewMetrics, setOverviewMetrics] = useState<OverviewMetrics | null>(null);
   const [moderationPage, setModerationPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [selectedProductIndex, setSelectedProductIndex] = useState(0);
@@ -171,6 +179,14 @@ export default function AdminDashboardPage() {
     startDate: "",
     endDate: "",
   });
+  const [moderationSearchInput, setModerationSearchInput] = useState("");
+  const debouncedModerationSearch = useDebouncedValue(moderationSearchInput, 300);
+  const isSearchDebouncing = moderationSearchInput !== debouncedModerationSearch;
+
+  useEffect(() => {
+    setModerationPage(1);
+    setFilters((prev) => ({ ...prev, q: debouncedModerationSearch.trim() }));
+  }, [debouncedModerationSearch]);
 
   const moderationQueryString = useMemo(() => {
     const params = new URLSearchParams();
@@ -279,6 +295,16 @@ export default function AdminDashboardPage() {
       setIsLoadingModeration(false);
     }
   }, [moderationQueryString]);
+
+  const loadOverviewMetrics = useCallback(async () => {
+    try {
+      const response = await fetch("/api/admin/overview-metrics");
+      if (!response.ok) return;
+      const payload = (await response.json()) as OverviewMetrics;
+      setOverviewMetrics(payload);
+    } catch {
+    }
+  }, []);
 
   const loadActivity = useCallback(async () => {
     setIsLoadingActivity(true);
@@ -462,6 +488,10 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     void loadPendingPaymentMethods();
   }, [loadPendingPaymentMethods]);
+
+  useEffect(() => {
+    void loadOverviewMetrics();
+  }, [loadOverviewMetrics]);
 
   const markLiveDisconnect = useCallback((message: string) => {
     const now = Date.now();
@@ -754,6 +784,27 @@ export default function AdminDashboardPage() {
         <p className="text-muted-foreground">Moderate product submissions and run one-click database write health checks.</p>
       </div>
 
+      <div className="mb-6 grid gap-3 sm:grid-cols-3">
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Active vendors</p>
+            <p className="text-2xl font-semibold">{overviewMetrics?.activeVendors ?? "-"}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Products live</p>
+            <p className="text-2xl font-semibold">{overviewMetrics?.productsLive ?? "-"}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs text-muted-foreground">Pending approvals</p>
+            <p className="text-2xl font-semibold">{overviewMetrics?.pendingApprovals ?? pendingCount}</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card className="mb-6">
         <CardHeader>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -945,15 +996,39 @@ export default function AdminDashboardPage() {
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <div className="space-y-2">
               <Label htmlFor="moderation-search">Search</Label>
-              <Input
-                id="moderation-search"
-                placeholder="Name, SKU, category, vendor"
-                value={filters.q}
-                onChange={(e) => {
-                  setModerationPage(1);
-                  setFilters((prev) => ({ ...prev, q: e.target.value }));
-                }}
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  id="moderation-search"
+                  placeholder="Name, SKU, category, vendor"
+                  value={moderationSearchInput}
+                  onChange={(e) => {
+                    setModerationSearchInput(e.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      const immediate = moderationSearchInput.trim();
+                      setModerationPage(1);
+                      setFilters((prev) => ({ ...prev, q: immediate }));
+                      void loadModerationQueue();
+                    }
+                  }}
+                />
+                {moderationSearchInput && (
+                  <Button
+                    className="touch-target"
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      setModerationSearchInput("");
+                      setModerationPage(1);
+                      setFilters((prev) => ({ ...prev, q: "" }));
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+              {isSearchDebouncing && <p className="text-xs text-muted-foreground">Searching...</p>}
             </div>
             <div className="space-y-2">
               <Label htmlFor="moderation-vendor">Vendor ID</Label>
@@ -1036,6 +1111,7 @@ export default function AdminDashboardPage() {
                 variant="outline"
                 onClick={() => {
                   setModerationPage(1);
+                  setModerationSearchInput("");
                   setFilters({
                     q: "",
                     vendorId: "",

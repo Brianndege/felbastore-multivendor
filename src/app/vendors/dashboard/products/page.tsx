@@ -2,7 +2,7 @@
 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, ChangeEvent, DragEvent } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
 import { DEFAULT_CATEGORIES } from "@/lib/categories";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 interface Product {
   id: string;
@@ -63,6 +64,37 @@ type NotificationResponse = {
   unreadCount: number;
 };
 
+type ProductFormState = {
+  name: string;
+  description: string;
+  price: number;
+  comparePrice: number;
+  currency: string;
+  inventory: number;
+  sku: string;
+  category: string;
+  status: Product["status"];
+  images: File[];
+  existingImages: string[];
+};
+
+const EMPTY_PRODUCT_FORM: ProductFormState = {
+  name: "",
+  description: "",
+  price: 0,
+  comparePrice: 0,
+  currency: "KES",
+  inventory: 0,
+  sku: "",
+  category: "",
+  status: "active",
+  images: [],
+  existingImages: [],
+};
+
+const PRODUCT_WIZARD_STEPS = ["Basic Info", "Pricing", "Inventory", "Media", "Review"];
+const SUGGESTED_TAGS = ["new", "trending", "gift", "premium", "eco", "best-seller", "limited"];
+
 export default function VendorProductsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -88,25 +120,25 @@ export default function VendorProductsPage() {
   const [isLinkingPaymentMethods, setIsLinkingPaymentMethods] = useState(false);
   const [selectedProductIdForPayments, setSelectedProductIdForPayments] = useState("");
   const [selectedPaymentMethodIds, setSelectedPaymentMethodIds] = useState<string[]>([]);
+  const [productSearch, setProductSearch] = useState("");
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [wizardStep, setWizardStep] = useState(0);
+  const [categorySearch, setCategorySearch] = useState("");
+  const [tagInput, setTagInput] = useState("");
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const [uploadingImages, setUploadingImages] = useState(false);
+  const [showPublishSuccess, setShowPublishSuccess] = useState(false);
   const [paymentMethodForm, setPaymentMethodForm] = useState({
     methodKind: "MPESA" as PaymentMethodKind,
     label: "",
     config: "",
   });
 
-  const [form, setForm] = useState({
-    name: "",
-    description: "",
-    price: 0,
-    comparePrice: 0,
-    currency: "KES",
-    inventory: 0,
-    sku: "",
-    category: "",
-    status: "active" as Product["status"],
-    images: [] as File[],
-    existingImages: [] as string[],
-  });
+  const [form, setForm] = useState<ProductFormState>(EMPTY_PRODUCT_FORM);
+  const debouncedProductSearch = useDebouncedValue(productSearch, 300);
+  const debouncedCategorySearch = useDebouncedValue(categorySearch, 200);
+  const isProductSearchPending = productSearch !== debouncedProductSearch;
 
   useEffect(() => {
     if (status === "loading") return;
@@ -341,8 +373,13 @@ export default function VendorProductsPage() {
       return;
     }
 
-    const resizedFiles = await Promise.all(Array.from(files).map((file) => resizeImage(file)));
-    setForm(prev => ({ ...prev, images: [...prev.images, ...resizedFiles] }));
+    setUploadingImages(true);
+    try {
+      const resizedFiles = await Promise.all(Array.from(files).map((file) => resizeImage(file)));
+      setForm(prev => ({ ...prev, images: [...prev.images, ...resizedFiles] }));
+    } finally {
+      setUploadingImages(false);
+    }
   };
 
   const handleImageUploadSelect = async (e: ChangeEvent<HTMLInputElement>) => {
@@ -353,6 +390,39 @@ export default function VendorProductsPage() {
   const handleImageCameraCapture = async (e: ChangeEvent<HTMLInputElement>) => {
     await handleImageFiles(e.target.files);
     e.target.value = "";
+  };
+
+  const handleImageDrop = async (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    await handleImageFiles(e.dataTransfer.files);
+  };
+
+  const addTag = (rawTag: string) => {
+    const normalized = rawTag.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!normalized) {
+      return;
+    }
+
+    setSelectedTags((prev) => (prev.includes(normalized) ? prev : [...prev, normalized]));
+    setTagInput("");
+  };
+
+  const removeTag = (tag: string) => {
+    setSelectedTags((prev) => prev.filter((item) => item !== tag));
+  };
+
+  const removeNewImage = (index: number) => {
+    setForm((prev) => ({
+      ...prev,
+      images: prev.images.filter((_, imageIndex) => imageIndex !== index),
+    }));
+  };
+
+  const removeExistingImage = (index: number) => {
+    setForm(prev => ({
+      ...prev,
+      existingImages: prev.existingImages.filter((_, imageIndex) => imageIndex !== index),
+    }));
   };
 
   const downloadBulkTemplate = () => {
@@ -526,26 +596,91 @@ export default function VendorProductsPage() {
     }
   };
 
+  const clearDraft = () => {
+    if (typeof window === "undefined") return;
+    window.localStorage.removeItem("vendor.productWizard.draft");
+  };
+
+  const persistDraft = useCallback((showToast = false) => {
+    if (editingProduct || typeof window === "undefined") {
+      return;
+    }
+
+    const draftPayload = {
+      form: {
+        ...form,
+        images: [],
+      },
+      selectedTags,
+      wizardStep,
+      updatedAt: new Date().toISOString(),
+    };
+
+    window.localStorage.setItem("vendor.productWizard.draft", JSON.stringify(draftPayload));
+    setDraftSavedAt(draftPayload.updatedAt);
+    if (showToast) {
+      toast.success("Draft saved");
+    }
+  }, [editingProduct, form, selectedTags, wizardStep]);
+
+  const loadDraft = () => {
+    if (typeof window === "undefined") return false;
+
+    const draft = window.localStorage.getItem("vendor.productWizard.draft");
+    if (!draft) {
+      return false;
+    }
+
+    try {
+      const parsed = JSON.parse(draft) as {
+        form?: Partial<ProductFormState>;
+        selectedTags?: string[];
+        wizardStep?: number;
+        updatedAt?: string;
+      };
+
+      if (parsed.form) {
+        setForm({
+          ...EMPTY_PRODUCT_FORM,
+          ...parsed.form,
+          images: [],
+          existingImages: Array.isArray(parsed.form.existingImages) ? parsed.form.existingImages : [],
+        });
+      }
+
+      setSelectedTags(Array.isArray(parsed.selectedTags) ? parsed.selectedTags : []);
+      setWizardStep(typeof parsed.wizardStep === "number" ? Math.min(Math.max(parsed.wizardStep, 0), PRODUCT_WIZARD_STEPS.length - 1) : 0);
+      setDraftSavedAt(parsed.updatedAt || null);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const resetModalState = () => {
+    setWizardStep(0);
+    setCategorySearch("");
+    setTagInput("");
+    setSelectedTags([]);
+    setDraftSavedAt(null);
+    setUploadingImages(false);
+    setShowPublishSuccess(false);
+  };
+
   const openAddModal = () => {
     setEditingProduct(null);
-    setForm({
-      name: "",
-      description: "",
-      price: 0,
-      comparePrice: 0,
-      currency: "KES",
-      inventory: 0,
-      sku: "",
-      category: "",
-      status: "active",
-      images: [],
-      existingImages: [],
-    });
+
+    resetModalState();
+    if (!loadDraft()) {
+      setForm(EMPTY_PRODUCT_FORM);
+    }
+
     setShowModal(true);
   };
 
   const openEditModal = (product: Product) => {
     setEditingProduct(product);
+    resetModalState();
     setForm({
       name: product.name,
       description: product.description || "",
@@ -559,10 +694,13 @@ export default function VendorProductsPage() {
       images: [],
       existingImages: product.images || [],
     });
+    setSelectedTags([]);
     setShowModal(true);
   };
 
   const handleSave = async () => {
+    setIsSavingProduct(true);
+
     try {
       const url = editingProduct ? `/api/vendor/products/${editingProduct.id}` : "/api/vendor/products";
       const method = editingProduct ? "PUT" : "POST";
@@ -582,6 +720,7 @@ export default function VendorProductsPage() {
             sku: form.sku || null,
             category: form.category,
             status: form.status,
+            tags: selectedTags,
             images: form.existingImages,
           }),
         });
@@ -596,20 +735,33 @@ export default function VendorProductsPage() {
         formData.append("sku", form.sku);
         formData.append("category", form.category);
         formData.append("status", form.status);
+        formData.append("tags", selectedTags.join(","));
         form.images.forEach(img => formData.append("images", img));
         form.existingImages.forEach(imgUrl => formData.append("existingImages", imgUrl));
 
         res = await fetch(url, { method, body: formData });
       }
 
-      if (!res.ok) throw new Error("Failed to save product");
+      if (!res.ok) {
+        let failureMessage = "Failed to save product";
+        try {
+          const payload = await res.json();
+          failureMessage = payload?.message || payload?.error || failureMessage;
+        } catch {
+        }
+        throw new Error(failureMessage);
+      }
 
       toast.success("Product saved successfully!");
       fetchProducts();
+      clearDraft();
+      setShowPublishSuccess(!editingProduct);
       setShowModal(false);
     } catch (err) {
       console.error(err);
-      toast.error("Error saving product");
+      toast.error(err instanceof Error ? err.message : "Error saving product");
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -696,6 +848,106 @@ export default function VendorProductsPage() {
       console.error(err);
       toast.error(err instanceof Error ? err.message : "Bulk upload failed");
     }
+  };
+
+  useEffect(() => {
+    if (!showModal || editingProduct) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      const hasContent =
+        form.name.trim() ||
+        form.description.trim() ||
+        form.category.trim() ||
+        form.sku.trim() ||
+        form.price > 0 ||
+        form.comparePrice > 0 ||
+        form.inventory > 0 ||
+        form.existingImages.length > 0 ||
+        form.images.length > 0 ||
+        selectedTags.length > 0;
+
+      if (hasContent) {
+        persistDraft();
+      }
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [showModal, editingProduct, form, selectedTags, wizardStep, persistDraft]);
+
+  const normalizedProductSearch = debouncedProductSearch.trim().toLowerCase();
+  const filteredProducts = useMemo(() => {
+    if (!normalizedProductSearch) {
+      return products;
+    }
+
+    return products.filter((product) => {
+      const searchable = [
+        product.id,
+        product.name,
+        product.sku,
+        product.category,
+        product.status,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      return searchable.includes(normalizedProductSearch);
+    });
+  }, [products, normalizedProductSearch]);
+
+  const filteredCategories = useMemo(() => {
+    const normalized = debouncedCategorySearch.trim().toLowerCase();
+    if (!normalized) {
+      return DEFAULT_CATEGORIES;
+    }
+
+    return DEFAULT_CATEGORIES.filter((category) =>
+      category.name.toLowerCase().includes(normalized)
+    );
+  }, [debouncedCategorySearch]);
+
+  const wizardErrors = useMemo(() => {
+    const errors: string[] = [];
+
+    if (wizardStep === 0) {
+      if (!form.name.trim()) errors.push("Product name is required.");
+      if (!form.description.trim()) errors.push("Description is required.");
+      if (!form.category.trim()) errors.push("Category is required.");
+    }
+
+    if (wizardStep === 1) {
+      if (Number(form.price) <= 0) errors.push("Price must be greater than 0.");
+      if (Number(form.comparePrice) < 0) errors.push("Compare price cannot be negative.");
+      if (!form.currency.trim()) errors.push("Currency is required.");
+    }
+
+    if (wizardStep === 2) {
+      if (Number(form.inventory) < 0) errors.push("Inventory cannot be negative.");
+    }
+
+    return errors;
+  }, [form, wizardStep]);
+
+  const isCurrentStepValid = wizardErrors.length === 0;
+
+  const nextStep = () => {
+    if (!isCurrentStepValid) {
+      toast.error(wizardErrors[0]);
+      return;
+    }
+
+    setWizardStep((prev) => Math.min(prev + 1, PRODUCT_WIZARD_STEPS.length - 1));
+  };
+
+  const prevStep = () => {
+    setWizardStep((prev) => Math.max(prev - 1, 0));
+  };
+
+  const resetWizardAndClose = () => {
+    setShowModal(false);
+    resetModalState();
   };
 
   if (status === "loading" || loading) {
@@ -919,7 +1171,41 @@ export default function VendorProductsPage() {
         </div>
       </div>
 
-      <div className="table-scroll rounded-md border">
+      <div className="mb-3 rounded-md border p-3">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-medium text-gray-900">Product catalog</p>
+            <p className="text-xs text-gray-500">
+              Search by product name, SKU, category, status, or product ID.
+            </p>
+          </div>
+          <div className="flex w-full max-w-xl flex-col gap-2 sm:flex-row">
+            <Input
+              placeholder="Search products"
+              value={productSearch}
+              onChange={(event) => setProductSearch(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  setProductSearch((prev) => prev.trim());
+                }
+              }}
+            />
+            {productSearch && (
+              <Button
+                className="touch-target"
+                type="button"
+                variant="outline"
+                onClick={() => setProductSearch("")}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+        </div>
+        {isProductSearchPending && <p className="mt-2 text-xs text-gray-500">Searching products...</p>}
+      </div>
+
+      <div className="table-scroll rounded-md border bg-white">
         <Table>
           <TableHeader>
             <TableRow>
@@ -933,7 +1219,7 @@ export default function VendorProductsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {products.length > 0 ? products.map(product => (
+            {filteredProducts.length > 0 ? filteredProducts.map(product => (
               <TableRow key={product.id}>
                 <TableCell>{product.id}</TableCell>
                 <TableCell>{product.name}</TableCell>
@@ -953,7 +1239,7 @@ export default function VendorProductsPage() {
             )) : (
               <TableRow>
                 <TableCell colSpan={7} className="text-center py-8 text-gray-500">
-                  No products found
+                  {normalizedProductSearch ? "No products match your search" : "No products found"}
                 </TableCell>
               </TableRow>
             )}
@@ -961,93 +1247,256 @@ export default function VendorProductsPage() {
         </Table>
       </div>
 
-      <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent>
+      <Dialog
+        open={showModal}
+        onOpenChange={(open) => {
+          setShowModal(open);
+          if (!open) {
+            resetModalState();
+          }
+        }}
+      >
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingProduct ? "Edit Product" : "Add Product"}</DialogTitle>
+            <DialogTitle>{editingProduct ? "Edit Product" : "Add Product Wizard"}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4">
-            <Input name="name" value={form.name} onChange={handleFormChange} placeholder="Product Name" />
-            <Input name="description" value={form.description} onChange={handleFormChange} placeholder="Description" />
-            <Input type="number" name="price" value={form.price} onChange={handleFormChange} placeholder="Price" />
-            <Input type="number" name="comparePrice" value={form.comparePrice} onChange={handleFormChange} placeholder="Compare Price" />
-            <Select name="currency" value={form.currency} onValueChange={v => setForm(prev => ({ ...prev, currency: v }))}>
-              <SelectTrigger><SelectValue placeholder="Currency" /></SelectTrigger>
-              <SelectContent>
-                {["KES","USD","EUR","GBP","NGN"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input type="number" name="inventory" value={form.inventory} onChange={handleFormChange} placeholder="Inventory" />
-            <Input name="sku" value={form.sku} onChange={handleFormChange} placeholder="SKU" />
-            <Select name="category" value={form.category} onValueChange={v => setForm(prev => ({ ...prev, category: v }))}>
-              <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
-              <SelectContent>
-                {DEFAULT_CATEGORIES.map((category) => (
-                  <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select name="status" value={form.status} onValueChange={v => setForm(prev => ({ ...prev, status: v as Product["status"] }))}>
-              <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
-                <SelectItem value="low_stock">Low Stock</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Product Images</p>
-              <div className="mobile-stack flex flex-wrap gap-2">
-                <Button className="touch-target" type="button" variant="outline" onClick={() => imageUploadInputRef.current?.click()}>
-                  Upload Images
-                </Button>
-                <Button className="touch-target" type="button" variant="outline" onClick={() => imageCameraInputRef.current?.click()}>
-                  Take Photo
-                </Button>
+            <div className="rounded-md border bg-muted/30 p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-medium">Step {wizardStep + 1} of {PRODUCT_WIZARD_STEPS.length}</p>
+                <p className="text-xs text-gray-500">{PRODUCT_WIZARD_STEPS[wizardStep]}</p>
               </div>
-              <input
-                ref={imageUploadInputRef}
-                type="file"
-                name="images"
-                multiple
-                onChange={handleImageUploadSelect}
-                accept="image/*"
-                className="hidden"
-              />
-              <input
-                ref={imageCameraInputRef}
-                type="file"
-                name="cameraImages"
-                multiple
-                onChange={handleImageCameraCapture}
-                accept="image/*"
-                capture="environment"
-                className="hidden"
-              />
-              {form.images.length > 0 && (
-                <p className="text-xs text-gray-500">{form.images.length} new image(s) selected</p>
-              )}
-            </div>
-            {form.existingImages.length > 0 && (
-              <div className="flex gap-2 flex-wrap mt-2">
-                {form.existingImages.map((img, i) => (
-                  <div key={i} className="relative">
-                    <img src={img} alt="Product" className="w-20 h-20 object-cover rounded border" />
-                    <button
-                      type="button"
-                      className="absolute top-0 right-0 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center"
-                      onClick={() => setForm(prev => ({ ...prev, existingImages: prev.existingImages.filter((_, idx) => idx !== i) }))}
-                    >×</button>
+              <div className="grid grid-cols-5 gap-2">
+                {PRODUCT_WIZARD_STEPS.map((step, index) => (
+                  <div key={step} className="space-y-1">
+                    <div className={`h-1.5 rounded-full ${index <= wizardStep ? "bg-primary" : "bg-gray-200"}`} />
+                    <p className={`truncate text-[11px] ${index === wizardStep ? "font-medium text-gray-900" : "text-gray-500"}`}>
+                      {step}
+                    </p>
                   </div>
                 ))}
               </div>
+            </div>
+
+            {wizardStep === 0 && (
+              <div className="space-y-3">
+                <Input name="name" value={form.name} onChange={handleFormChange} placeholder="Product name" />
+                <Input name="description" value={form.description} onChange={handleFormChange} placeholder="Short description" />
+
+                <div className="space-y-2">
+                  <Input
+                    placeholder="Search category"
+                    value={categorySearch}
+                    onChange={(event) => setCategorySearch(event.target.value)}
+                  />
+                  <Select name="category" value={form.category} onValueChange={(value) => setForm((prev) => ({ ...prev, category: value }))}>
+                    <SelectTrigger><SelectValue placeholder="Category" /></SelectTrigger>
+                    <SelectContent>
+                      {filteredCategories.map((category) => (
+                        <SelectItem key={category.id} value={category.name}>{category.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Input
+                    value={tagInput}
+                    placeholder="Add tag and press Enter"
+                    onChange={(event) => setTagInput(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        addTag(tagInput);
+                      }
+                    }}
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {SUGGESTED_TAGS.map((suggestion) => (
+                      <Button
+                        key={suggestion}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="touch-target"
+                        onClick={() => addTag(suggestion)}
+                      >
+                        + {suggestion}
+                      </Button>
+                    ))}
+                  </div>
+                  {selectedTags.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedTags.map((tag) => (
+                        <Badge key={tag} variant="outline" className="cursor-pointer" onClick={() => removeTag(tag)}>
+                          {tag} ×
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
 
-            <div className="mobile-stack mt-4 flex flex-wrap justify-end gap-2">
-              <Button className="touch-target" variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
-              <Button className="touch-target" onClick={handleSave}>Save</Button>
+            {wizardStep === 1 && (
+              <div className="space-y-3">
+                <Input type="number" name="price" value={form.price} onChange={handleFormChange} placeholder="Price" />
+                <Input type="number" name="comparePrice" value={form.comparePrice} onChange={handleFormChange} placeholder="Compare price" />
+                <Select name="currency" value={form.currency} onValueChange={v => setForm(prev => ({ ...prev, currency: v }))}>
+                  <SelectTrigger><SelectValue placeholder="Currency" /></SelectTrigger>
+                  <SelectContent>
+                    {["KES", "USD", "EUR", "GBP", "NGN"].map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select name="status" value={form.status} onValueChange={v => setForm(prev => ({ ...prev, status: v as Product["status"] }))}>
+                  <SelectTrigger><SelectValue placeholder="Status" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="inactive">Inactive</SelectItem>
+                    <SelectItem value="low_stock">Low Stock</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {wizardStep === 2 && (
+              <div className="space-y-3">
+                <Input type="number" name="inventory" value={form.inventory} onChange={handleFormChange} placeholder="Inventory" />
+                <Input name="sku" value={form.sku} onChange={handleFormChange} placeholder="SKU" />
+                <div className="rounded-md border bg-muted/30 p-3 text-xs text-gray-600">
+                  SKU is optional but recommended for bulk updates and order operations.
+                </div>
+              </div>
+            )}
+
+            {wizardStep === 3 && (
+              <div className="space-y-3">
+                <div
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => void handleImageDrop(event)}
+                  className="rounded-md border border-dashed p-4 text-center"
+                >
+                  <p className="text-sm font-medium">Drag and drop product images here</p>
+                  <p className="mb-3 text-xs text-gray-500">or use quick actions below</p>
+                  <div className="mobile-stack flex flex-wrap justify-center gap-2">
+                    <Button className="touch-target" type="button" variant="outline" onClick={() => imageUploadInputRef.current?.click()}>
+                      Upload Images
+                    </Button>
+                    <Button className="touch-target" type="button" variant="outline" onClick={() => imageCameraInputRef.current?.click()}>
+                      Take Photo
+                    </Button>
+                  </div>
+                </div>
+
+                <input
+                  ref={imageUploadInputRef}
+                  type="file"
+                  name="images"
+                  multiple
+                  onChange={handleImageUploadSelect}
+                  accept="image/*"
+                  className="hidden"
+                />
+                <input
+                  ref={imageCameraInputRef}
+                  type="file"
+                  name="cameraImages"
+                  multiple
+                  onChange={handleImageCameraCapture}
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                />
+
+                {uploadingImages && <p className="text-xs text-gray-500">Optimizing images...</p>}
+
+                {(form.images.length > 0 || form.existingImages.length > 0) && (
+                  <div className="grid grid-cols-3 gap-2">
+                    {form.existingImages.map((img, index) => (
+                      <div key={img + index} className="relative rounded border p-1">
+                        <img src={img} alt="Product" className="h-20 w-full rounded object-cover" />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="absolute right-1 top-1 h-6 min-h-0 px-2 text-xs"
+                          onClick={() => removeExistingImage(index)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                    {form.images.map((img, index) => (
+                      <div key={img.name + index} className="relative rounded border p-1">
+                        <img src={URL.createObjectURL(img)} alt={img.name} className="h-20 w-full rounded object-cover" />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          className="absolute right-1 top-1 h-6 min-h-0 px-2 text-xs"
+                          onClick={() => removeNewImage(index)}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {wizardStep === 4 && (
+              <div className="space-y-3 rounded-md border bg-muted/20 p-4 text-sm">
+                <p className="font-medium">Review before publishing</p>
+                <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  <p><span className="font-semibold">Name:</span> {form.name || "-"}</p>
+                  <p><span className="font-semibold">Category:</span> {form.category || "-"}</p>
+                  <p><span className="font-semibold">Price:</span> {form.price || 0} {form.currency}</p>
+                  <p><span className="font-semibold">Inventory:</span> {form.inventory}</p>
+                  <p><span className="font-semibold">SKU:</span> {form.sku || "-"}</p>
+                  <p><span className="font-semibold">Status:</span> {form.status.replace("_", " ")}</p>
+                </div>
+                <p className="text-xs text-gray-600">Description: {form.description || "-"}</p>
+                {selectedTags.length > 0 && (
+                  <p className="text-xs text-gray-600">Tags: {selectedTags.join(", ")}</p>
+                )}
+                <p className="text-xs text-gray-600">
+                  Media files: {form.images.length} new, {form.existingImages.length} existing
+                </p>
+                {showPublishSuccess && <p className="text-xs font-medium text-green-600">Product published successfully.</p>}
+              </div>
+            )}
+
+            {wizardErrors.length > 0 && (
+              <div className="rounded-md border border-red-200 bg-red-50 p-2 text-xs text-red-600">
+                {wizardErrors[0]}
+              </div>
+            )}
+
+            <div className="mobile-stack mt-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap gap-2">
+                {!editingProduct && (
+                  <Button className="touch-target" variant="outline" type="button" onClick={() => persistDraft(true)}>
+                    Save Draft
+                  </Button>
+                )}
+                {draftSavedAt && !editingProduct && (
+                  <p className="self-center text-xs text-gray-500">Last draft: {new Date(draftSavedAt).toLocaleTimeString()}</p>
+                )}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button className="touch-target" variant="outline" type="button" onClick={resetWizardAndClose}>Cancel</Button>
+                <Button className="touch-target" type="button" variant="outline" onClick={prevStep} disabled={wizardStep === 0}>Back</Button>
+                {wizardStep < PRODUCT_WIZARD_STEPS.length - 1 ? (
+                  <Button className="touch-target" type="button" onClick={nextStep} disabled={!isCurrentStepValid}>Next</Button>
+                ) : (
+                  <Button className="touch-target" type="button" onClick={handleSave} disabled={isSavingProduct || !isCurrentStepValid}>
+                    {isSavingProduct ? "Publishing..." : editingProduct ? "Save Changes" : "Publish Product"}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </DialogContent>

@@ -6,6 +6,8 @@ import { enforceCsrfOrigin } from "@/lib/csrf";
 import { normalizeCategoryName } from "@/lib/categories";
 import { getProductEditModerationState } from "@/lib/product-workflow";
 import { logVendorProductActivity } from "@/lib/product-activity";
+import { normalizeVendorWorkflowStatus, validateVendorProductInput } from "@/lib/products/validation";
+import { getVendorOnboardingChecklist } from "@/lib/vendor/onboarding";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -33,13 +35,49 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (!product || product.vendorId !== vendorId) return res.status(404).json({ message: "Product not found" });
 
     const moderationState = getProductEditModerationState();
+    const requestedWorkflowStatus = normalizeVendorWorkflowStatus(body?.workflowStatus);
+    const normalizedCategory = typeof body?.category === "string" ? normalizeCategoryName(body.category) : product.category;
+    const normalizedPrice = typeof body?.price === "number" ? body.price : Number(body?.price ?? product.price);
+    const incomingImages = Array.isArray(body?.images) ? body.images.filter((item: unknown) => typeof item === "string" && item.trim()) : product.images;
+
+    const validation = validateVendorProductInput({
+      name: typeof body?.name === "string" ? body.name : product.name,
+      description: typeof body?.description === "string" ? body.description : product.description,
+      category: normalizedCategory,
+      price: normalizedPrice,
+      imageCount: incomingImages.length,
+      workflowStatus: requestedWorkflowStatus,
+    });
+
+    if (!validation.valid) {
+      return res.status(400).json({ message: "Product validation failed", errors: validation.errors });
+    }
+
+    const publishNow = requestedWorkflowStatus === "PENDING_APPROVAL";
+    if (publishNow) {
+      const onboarding = await getVendorOnboardingChecklist(vendorId);
+      if (!onboarding?.isReadyForPublishing) {
+        return res.status(400).json({
+          message: "Vendor onboarding checklist is incomplete. Complete onboarding before publishing.",
+          checklist: onboarding,
+        });
+      }
+    }
+    const workflowStatus = publishNow
+      ? moderationState.isApproved
+        ? "APPROVED"
+        : "PENDING_APPROVAL"
+      : "DRAFT";
 
     const normalizedBody = {
       ...body,
-      category: typeof body?.category === "string" ? normalizeCategoryName(body.category) : body?.category,
+      category: normalizedCategory,
+      price: normalizedPrice,
       currency: typeof body?.currency === "string" && body.currency.trim() ? body.currency : "KES",
-      status: moderationState.status,
-      isApproved: moderationState.isApproved,
+      images: incomingImages,
+      status: publishNow ? moderationState.status : "inactive",
+      isApproved: publishNow ? moderationState.isApproved : false,
+      workflowStatus,
     };
 
     const updated = await prisma.product.update({

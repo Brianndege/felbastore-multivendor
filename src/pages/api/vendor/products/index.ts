@@ -8,6 +8,9 @@ import { enforceCsrfOrigin } from "@/lib/csrf";
 import { normalizeCategoryName } from "@/lib/categories";
 import { getProductCreateModerationState } from "@/lib/product-workflow";
 import { logVendorProductActivity } from "@/lib/product-activity";
+import { DATABASE_CONFIGURATION_ERROR, hasValidDatabaseUrl, mapDatabaseError } from "@/lib/database-guard";
+import { normalizeVendorWorkflowStatus, validateVendorProductInput } from "@/lib/products/validation";
+import { getVendorOnboardingChecklist } from "@/lib/vendor/onboarding";
 
 export const config = {
   api: {
@@ -23,6 +26,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const vendorId = session.user.id;
+
+  if (!hasValidDatabaseUrl()) {
+    return res.status(503).json({ message: DATABASE_CONFIGURATION_ERROR });
+  }
 
   if (req.method === "GET") {
     // Fetch vendor products
@@ -59,6 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const inventoryValue = Number(readField(inventory) || 0);
         const skuValue = readField(sku) || "";
         const currencyValue = readField(currency) || "KES";
+        const requestedWorkflowStatus = normalizeVendorWorkflowStatus(readField(fields.workflowStatus));
 
         // Handle images
         let images: string[] = [];
@@ -74,10 +82,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
 
+        const validation = validateVendorProductInput({
+          name: nameValue,
+          description: descriptionValue,
+          category: categoryValue,
+          price: priceValue,
+          imageCount: images.length,
+          workflowStatus: requestedWorkflowStatus,
+        });
+
+        if (!validation.valid) {
+          return res.status(400).json({ message: "Product validation failed", errors: validation.errors });
+        }
+
         const moderationState = getProductCreateModerationState();
+        const publishNow = requestedWorkflowStatus === "PENDING_APPROVAL";
+
+        if (publishNow) {
+          const onboarding = await getVendorOnboardingChecklist(vendorId);
+          if (!onboarding?.isReadyForPublishing) {
+            return res.status(400).json({
+              message: "Vendor onboarding checklist is incomplete. Complete onboarding before publishing.",
+              checklist: onboarding,
+            });
+          }
+        }
+
+        const workflowStatus = publishNow
+          ? moderationState.isApproved
+            ? "APPROVED"
+            : "PENDING_APPROVAL"
+          : "DRAFT";
+
+        const status = publishNow ? moderationState.status : "inactive";
+        const isApproved = publishNow ? moderationState.isApproved : false;
 
         const product = await prisma.product.create({
           data: {
+            productType: "vendor",
             name: nameValue,
             description: descriptionValue,
             price: priceValue,
@@ -90,8 +132,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             currency: currencyValue || "KES",
             images,
             vendorId,
-            status: moderationState.status,
-            isApproved: moderationState.isApproved,
+            status,
+            isApproved,
+            workflowStatus,
+            createdBy: "vendor_portal",
           },
         });
 
@@ -109,7 +153,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(201).json(product);
       } catch (error) {
         console.error("[Vendor Product POST]", error);
-        return res.status(500).json({ message: "Error creating product", error });
+        const dbErrorMessage = mapDatabaseError(error);
+        return res.status(500).json({
+          message: dbErrorMessage || "Error creating product",
+          error,
+        });
       }
     });
 

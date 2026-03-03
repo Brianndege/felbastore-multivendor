@@ -1,12 +1,20 @@
+"use client";
+
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 export default function VendorsPage() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterMode, setFilterMode] = useState<"all" | "verified" | "new">("all");
+  const debouncedSearch = useDebouncedValue(searchQuery, 350);
+
   // Mock vendor data - in a real app, this would come from your database
-  const vendors = [
+  const vendors = useMemo(() => [
     {
       id: "1",
       name: "AudioTech",
@@ -97,9 +105,34 @@ export default function VendorsPage() {
       location: "Colorado, USA",
       verified: true,
     },
-  ];
+  ], []);
 
   const featuredVendors = vendors.filter(vendor => vendor.verified && vendor.rating >= 4.7);
+  const normalizedQuery = debouncedSearch.trim().toLowerCase();
+  const isSearching = searchQuery !== debouncedSearch;
+
+  const filteredVendors = useMemo(() => {
+    const filteredByMode = vendors.filter((vendor) => {
+      if (filterMode === "verified") return vendor.verified;
+      if (filterMode === "new") {
+        const joined = new Date(vendor.joinedDate).getTime();
+        const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
+        return joined >= ninetyDaysAgo;
+      }
+      return true;
+    });
+
+    if (!normalizedQuery) {
+      return filteredByMode;
+    }
+
+    return filteredByMode.filter((vendor) =>
+      [vendor.storeName, vendor.name, vendor.description, vendor.location, ...vendor.categories]
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery)
+    );
+  }, [vendors, filterMode, normalizedQuery]);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -113,13 +146,30 @@ export default function VendorsPage() {
       {/* Search and Filters */}
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative flex-1 max-w-md">
-          <Input placeholder="Search vendors..." className="pr-10" />
+          <Input
+            placeholder="Search vendors..."
+            className="pr-16"
+            aria-label="Search vendors"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+          />
+          {searchQuery.trim().length > 0 && (
+            <button
+              type="button"
+              className="absolute right-8 top-2.5 text-xs text-muted-foreground"
+              aria-label="Clear vendor search"
+              onClick={() => setSearchQuery("")}
+            >
+              ✕
+            </button>
+          )}
           <span className="absolute right-3 top-2.5 text-gray-400">🔍</span>
+          {isSearching && <p className="mt-1 text-xs text-muted-foreground">Searching...</p>}
         </div>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm">All Vendors</Button>
-          <Button variant="outline" size="sm">Verified Only</Button>
-          <Button variant="outline" size="sm">New Vendors</Button>
+        <div className="mobile-stack flex gap-2">
+          <Button variant={filterMode === "all" ? "default" : "outline"} size="sm" onClick={() => setFilterMode("all")}>All Vendors</Button>
+          <Button variant={filterMode === "verified" ? "default" : "outline"} size="sm" onClick={() => setFilterMode("verified")}>Verified Only</Button>
+          <Button variant={filterMode === "new" ? "default" : "outline"} size="sm" onClick={() => setFilterMode("new")}>New Vendors</Button>
         </div>
       </div>
 
@@ -192,8 +242,13 @@ export default function VendorsPage() {
       {/* All Vendors */}
       <div>
         <h2 className="text-2xl font-bold mb-6 text-[#e16b22]">All Vendors</h2>
+        {filteredVendors.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+            No results found.
+          </div>
+        ) : (
         <div className="grid gap-4">
-          {vendors.map((vendor) => (
+          {filteredVendors.map((vendor) => (
             <Card key={vendor.id}>
               <CardContent className="p-6">
                 <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -254,6 +309,7 @@ export default function VendorsPage() {
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       {/* Call to Action */}

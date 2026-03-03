@@ -52,8 +52,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     where: { id },
     data:
       action === "approve"
-        ? { isApproved: true, status: "active" }
-        : { isApproved: false, status: "inactive" },
+        ? { isApproved: true, status: "active", workflowStatus: "APPROVED" }
+        : { isApproved: false, status: "inactive", workflowStatus: "REJECTED" },
   });
 
   const notificationMessage =

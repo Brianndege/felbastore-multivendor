@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,11 +14,15 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useSession, signOut } from "next-auth/react";
 import { useCart } from "@/contexts/CartContext";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 export default function Header() {
   const { data: session, status } = useSession();
   const { getCartCount } = useCart();
+  const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const debouncedSearch = useDebouncedValue(searchQuery, 350);
 
   useEffect(() => {
     if (!isMobileMenuOpen) {
@@ -32,6 +37,23 @@ export default function Header() {
   }, [isMobileMenuOpen]);
 
   const closeMobileMenu = () => setIsMobileMenuOpen(false);
+  const trimmedDebouncedSearch = debouncedSearch.trim();
+  const isSearching = searchQuery !== debouncedSearch;
+
+  const submitSearch = () => {
+    const query = searchQuery.trim();
+    if (!query) {
+      router.push("/products");
+      return;
+    }
+
+    router.push(`/products?q=${encodeURIComponent(query)}`);
+  };
+
+  const clearSearch = () => {
+    setSearchQuery("");
+    router.push("/products");
+  };
 
   return (
     <header className="fixed inset-x-0 top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
@@ -75,15 +97,38 @@ export default function Header() {
               <Input
                 type="search"
                 placeholder="Search products..."
-                className="pr-10"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    submitSearch();
+                  }
+                }}
+                aria-label="Search products"
+                className="pr-20"
               />
               <Button
                 size="sm"
                 variant="ghost"
-                className="absolute right-0 top-0 h-full px-3"
+                className="absolute right-9 top-0 h-full px-3"
+                onClick={submitSearch}
+                aria-label="Submit product search"
               >
                 🔍
               </Button>
+              {trimmedDebouncedSearch.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={clearSearch}
+                  aria-label="Clear product search"
+                >
+                  ✕
+                </Button>
+              )}
+              {isSearching && <span className="absolute -bottom-5 left-1 text-xs text-muted-foreground">Searching...</span>}
             </div>
           </div>
 
@@ -194,16 +239,39 @@ export default function Header() {
             <Input
               type="search"
               placeholder="Search products..."
-              className="pr-10"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  submitSearch();
+                }
+              }}
+              aria-label="Search products"
+              className="pr-20"
             />
             <Button
               size="sm"
               variant="ghost"
-              className="absolute right-0 top-0 h-full px-3"
+              className="absolute right-9 top-0 h-full px-3"
+              onClick={submitSearch}
+              aria-label="Submit product search"
             >
               🔍
             </Button>
+            {trimmedDebouncedSearch.length > 0 && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="absolute right-0 top-0 h-full px-3"
+                onClick={clearSearch}
+                aria-label="Clear product search"
+              >
+                ✕
+              </Button>
+            )}
           </div>
+          {isSearching && <p className="mt-1 text-xs text-muted-foreground">Searching...</p>}
         </div>
 
         {isMobileMenuOpen && (
