@@ -132,6 +132,10 @@ export default function LoginPage() {
     try {
       await signIn("google", {
         callbackUrl: callbackUrl || "/account",
+      }, {
+        prompt: "select_account",
+        access_type: "offline",
+        response_type: "code",
       });
     } catch {
       toast.error("Google sign-in could not be started. Please try again.");
