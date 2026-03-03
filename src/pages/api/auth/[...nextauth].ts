@@ -13,7 +13,7 @@ import { getClientIpAddress, hashIdentifier } from "@/lib/auth/security";
 import { logAuthAuditEvent } from "@/lib/auth/audit";
 import { createOtpChallenge, verifyOtpChallenge } from "@/lib/auth/otp-service";
 import { sendOtpEmail } from "@/lib/email";
-import { createGoogleOnboardingToken, verifyGoogleIdToken } from "@/lib/auth/google-oauth";
+import { createGoogleOnboardingToken, verifyGoogleAccessToken, verifyGoogleIdToken } from "@/lib/auth/google-oauth";
 
 const providers: NextAuthOptions["providers"] = [];
 
@@ -386,11 +386,9 @@ export const authOptions: NextAuthOptions = {
 
       if (account.provider === "google") {
         try {
-          if (!account.id_token) {
-            return "/auth/login?error=OAuthCallback";
-          }
-
-          const verifiedProfile = await verifyGoogleIdToken(account.id_token);
+          const verifiedProfile = account.id_token
+            ? await verifyGoogleIdToken(account.id_token)
+            : await verifyGoogleAccessToken(account.access_token || "");
           const normalizedEmail = verifiedProfile.email;
 
           const linkedGoogleAccount = await prisma.account.findUnique({
@@ -542,7 +540,18 @@ export const authOptions: NextAuthOptions = {
           });
 
           return `/auth/google-onboarding?token=${encodeURIComponent(onboardingToken)}`;
-        } catch {
+        } catch (error) {
+          await logAuthAuditEvent({
+            event: "oauth_login",
+            status: "failure",
+            email: user.email.trim().toLowerCase(),
+            userType: "user",
+            metadata: {
+              provider: "google",
+              reason: error instanceof Error ? error.message : "oauth_callback_failed",
+              providerAccountId: account.providerAccountId,
+            },
+          });
           return "/auth/login?error=OAuthCallback";
         }
       }

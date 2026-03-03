@@ -121,3 +121,43 @@ export async function verifyGoogleIdToken(idToken: string): Promise<VerifiedGoog
     picture: payload.picture || null,
   };
 }
+
+export async function verifyGoogleAccessToken(accessToken: string): Promise<VerifiedGoogleProfile> {
+  if (!accessToken) {
+    throw new Error("GOOGLE_ACCESS_TOKEN_MISSING");
+  }
+
+  const response = await fetch("https://openidconnect.googleapis.com/v1/userinfo", {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error("GOOGLE_ACCESS_TOKEN_INVALID");
+  }
+
+  const payload = (await response.json()) as {
+    sub?: string;
+    email?: string;
+    email_verified?: boolean;
+    name?: string;
+    picture?: string;
+  };
+
+  if (!payload?.sub || !payload?.email) {
+    throw new Error("GOOGLE_ACCESS_TOKEN_INVALID");
+  }
+
+  if (!payload.email_verified) {
+    throw new Error("GOOGLE_EMAIL_NOT_VERIFIED");
+  }
+
+  return {
+    googleId: payload.sub,
+    email: payload.email.trim().toLowerCase(),
+    name: payload.name || payload.email,
+    picture: payload.picture || null,
+  };
+}
