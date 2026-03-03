@@ -51,6 +51,16 @@ export default function LoginPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const hasAuthCode = params.has("code") && params.has("state");
+    const issuer = params.get("iss") || "";
+    const scope = params.get("scope") || "";
+    const looksLikeGoogleCallback = hasAuthCode && (issuer.includes("accounts.google.com") || scope.includes("openid"));
+
+    if (looksLikeGoogleCallback) {
+      window.location.replace(`/api/auth/callback/google?${params.toString()}`);
+      return;
+    }
+
     const type = params.get("userType");
     const err = params.get("error");
 
