@@ -135,8 +135,10 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
-          prompt: "select_account",
+          scope: "openid email profile",
+          prompt: "select_account consent",
           access_type: "offline",
+          include_granted_scopes: "true",
           response_type: "code",
         },
       },
