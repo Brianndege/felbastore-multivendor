@@ -48,6 +48,15 @@ function getPostAuthRedirectFromCookie(request: NextRequest) {
       return "/account";
     }
 
+    if (callbackUrl.pathname.startsWith("/api/auth/callback/")) {
+      return "/account";
+    }
+
+    const oauthParamKeys = ["code", "state", "iss", "scope", "authuser", "prompt"];
+    for (const key of oauthParamKeys) {
+      callbackUrl.searchParams.delete(key);
+    }
+
     const candidatePath = `${callbackUrl.pathname}${callbackUrl.search}`;
     if (!candidatePath.startsWith("/") || candidatePath.startsWith("//")) {
       return "/account";
@@ -57,6 +66,13 @@ function getPostAuthRedirectFromCookie(request: NextRequest) {
   } catch {
     return "/account";
   }
+}
+
+function getFinalizingRedirect(request: NextRequest) {
+  const callbackPath = getPostAuthRedirectFromCookie(request);
+  const finalizingUrl = new URL("/auth/login-success", request.url);
+  finalizingUrl.searchParams.set("callbackUrl", callbackPath || "/account");
+  return finalizingUrl;
 }
 
 function getAllowedOrigins(request: NextRequest) {
@@ -152,7 +168,7 @@ export async function middleware(request: NextRequest) {
             return NextResponse.redirect(new URL("/account", request.url));
           }
 
-          return NextResponse.redirect(new URL(getPostAuthRedirectFromCookie(request), request.url));
+          return NextResponse.redirect(getFinalizingRedirect(request));
         }
 
         const now = Date.now();
@@ -177,7 +193,7 @@ export async function middleware(request: NextRequest) {
             return NextResponse.redirect(new URL("/account", request.url));
           }
 
-          return NextResponse.redirect(new URL(getPostAuthRedirectFromCookie(request), request.url));
+          return NextResponse.redirect(getFinalizingRedirect(request));
         }
       }
     }
