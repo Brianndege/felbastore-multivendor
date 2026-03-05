@@ -29,6 +29,35 @@ function pruneGoogleCallbackReplayStore(now: number) {
   }
 }
 
+function getPostAuthRedirectFromCookie(request: NextRequest) {
+  const callbackCookie = request.cookies.get("__Secure-next-auth.callback-url")?.value
+    || request.cookies.get("next-auth.callback-url")?.value;
+
+  if (!callbackCookie) {
+    return "/account";
+  }
+
+  try {
+    const currentOrigin = request.nextUrl.origin;
+    const callbackUrl = callbackCookie.startsWith("http")
+      ? new URL(callbackCookie)
+      : new URL(callbackCookie, currentOrigin);
+
+    if (callbackUrl.origin !== currentOrigin) {
+      return "/account";
+    }
+
+    const candidatePath = `${callbackUrl.pathname}${callbackUrl.search}`;
+    if (!candidatePath.startsWith("/") || candidatePath.startsWith("//")) {
+      return "/account";
+    }
+
+    return candidatePath;
+  } catch {
+    return "/account";
+  }
+}
+
 function getAllowedOrigins(request: NextRequest) {
   const envOrigins = (process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -124,6 +153,8 @@ export async function middleware(request: NextRequest) {
           if (callbackToken?.role === "user") {
             return NextResponse.redirect(new URL("/account", request.url));
           }
+
+          return NextResponse.redirect(new URL(getPostAuthRedirectFromCookie(request), request.url));
         }
       }
     }
