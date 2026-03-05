@@ -16,6 +16,7 @@ const edgeApiRateLimitStore = new Map<string, RateLimitEntry>();
 const googleCallbackReplayStore = new Map<string, number>();
 
 const GOOGLE_CALLBACK_REPLAY_WINDOW_MS = 5 * 60_000;
+const GOOGLE_CALLBACK_CODE_COOKIE = "__gauth_code_seen";
 
 function getRateLimitStore() {
   return edgeApiRateLimitStore;
@@ -129,15 +130,37 @@ export async function middleware(request: NextRequest) {
   const isLocalHost = host.startsWith("localhost") || host.startsWith("127.0.0.1");
 
   if (pathname.startsWith("/api")) {
+    let googleCallbackCodeForCookie: string | null = null;
+
     if (pathname === "/api/auth/callback/google" && request.method === "GET") {
       const oauthCode = request.nextUrl.searchParams.get("code");
+      const cookieSeenCode = request.cookies.get(GOOGLE_CALLBACK_CODE_COOKIE)?.value;
 
       if (oauthCode) {
+        if (cookieSeenCode === oauthCode) {
+          const callbackToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+
+          if (callbackToken?.role === "admin") {
+            return NextResponse.redirect(new URL("/admin/dashboard", request.url));
+          }
+
+          if (callbackToken?.role === "vendor" || callbackToken?.role === "both") {
+            return NextResponse.redirect(new URL("/vendors/dashboard", request.url));
+          }
+
+          if (callbackToken?.role === "user") {
+            return NextResponse.redirect(new URL("/account", request.url));
+          }
+
+          return NextResponse.redirect(new URL(getPostAuthRedirectFromCookie(request), request.url));
+        }
+
         const now = Date.now();
         pruneGoogleCallbackReplayStore(now);
 
         const previousSeenAt = googleCallbackReplayStore.get(oauthCode);
         googleCallbackReplayStore.set(oauthCode, now);
+        googleCallbackCodeForCookie = oauthCode;
 
         if (previousSeenAt && now - previousSeenAt <= GOOGLE_CALLBACK_REPLAY_WINDOW_MS) {
           const callbackToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
@@ -197,6 +220,17 @@ export async function middleware(request: NextRequest) {
     applyCorsHeaders(request, response);
     response.headers.set("X-RateLimit-Remaining", String(limit.remaining));
     response.headers.set("X-RateLimit-Reset", String(Math.ceil(limit.resetInMs / 1000)));
+
+    if (pathname === "/api/auth/callback/google" && request.method === "GET" && googleCallbackCodeForCookie) {
+      response.cookies.set(GOOGLE_CALLBACK_CODE_COOKIE, googleCallbackCodeForCookie, {
+        httpOnly: true,
+        secure: isProduction,
+        sameSite: "lax",
+        path: "/api/auth/callback/google",
+        maxAge: 300,
+      });
+    }
+
     return response;
   }
 
