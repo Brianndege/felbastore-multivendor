@@ -38,7 +38,7 @@ export default async function Home() {
             <p className="mb-8 text-lg opacity-90">Discover unique products from trusted vendors all in one place.</p>
             <div className="flex flex-wrap gap-4">
               <Button asChild size="lg" className="bg-white text-[#e16b22] hover:bg-orange-50"><Link href="/products">Shop Now</Link></Button>
-              <Button asChild variant="outline" size="lg" className="border-white text-white hover:bg-white/10"><Link href="/vendors/register">Become a Vendor</Link></Button>
+              <Button asChild size="lg" className="rounded-md border border-orange-500 bg-orange-500 px-6 py-3 font-semibold text-white transition-all duration-200 hover:border-orange-500 hover:bg-white hover:text-orange-500"><Link href="/vendors/register">Become a Vendor</Link></Button>
             </div>
           </div>
         </div>
