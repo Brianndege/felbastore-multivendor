@@ -18,6 +18,13 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 export default function Header() {
   const { data: session, status } = useSession();
+  // Debug logging for session state
+  if (typeof window !== "undefined") {
+    // eslint-disable-next-line no-console
+    console.log("[Header] Session:", session);
+    // eslint-disable-next-line no-console
+    console.log("[Header] Auth status:", status);
+  }
   const { getCartCount } = useCart();
   const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -154,7 +161,11 @@ export default function Header() {
             </Link>
 
             {/* Account */}
-            {session?.user ? (
+            {status === "loading" ? (
+              <div className="hidden items-center gap-2 sm:flex">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#e16b22]" />
+              </div>
+            ) : session?.user ? (
               <div className="hidden items-center gap-2 sm:flex">
                 <span className="text-sm text-muted-foreground">Welcome, {displayName}</span>
                 <DropdownMenu>

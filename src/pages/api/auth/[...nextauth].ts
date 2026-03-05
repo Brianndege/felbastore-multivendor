@@ -18,6 +18,19 @@ import { createGoogleOnboardingToken, verifyGoogleAccessToken, verifyGoogleIdTok
 const providers: NextAuthOptions["providers"] = [];
 let authSchemaCompatPromise: Promise<void> | null = null;
 
+const requiredAuthEnvKeys = [
+  "NEXTAUTH_URL",
+  "NEXTAUTH_SECRET",
+  "GOOGLE_CLIENT_ID",
+  "GOOGLE_CLIENT_SECRET",
+] as const;
+
+for (const key of requiredAuthEnvKeys) {
+  if (!process.env[key]) {
+    logger.warn(`[NextAuth] Missing environment variable: ${key}`);
+  }
+}
+
 function ensureAuthSchemaCompatibility() {
   if (authSchemaCompatPromise) {
     return authSchemaCompatPromise;
@@ -64,13 +77,17 @@ function ensureAuthSchemaCompatibility() {
   return authSchemaCompatPromise;
 }
 
-function getPostLoginRedirect(role?: string | null) {
-  const normalizedRole = (role || "").toLowerCase();
-  if (normalizedRole === "vendor" || normalizedRole === "both") {
-    return "/vendors/dashboard";
+function stripOAuthQueryParams(rawUrl: string, baseUrl: string) {
+  try {
+    const url = rawUrl.startsWith("/") ? new URL(rawUrl, baseUrl) : new URL(rawUrl);
+    const oauthParamKeys = ["code", "state", "iss", "scope", "authuser", "prompt"];
+    for (const key of oauthParamKeys) {
+      url.searchParams.delete(key);
+    }
+    return url;
+  } catch {
+    return null;
   }
-
-  return "/account";
 }
 
 async function cleanupDisposableOAuthUser(userId?: string | null) {
@@ -493,6 +510,9 @@ export const authOptions: NextAuthOptions = {
               select: { id: true },
             });
 
+            (user as any).id = linkedGoogleAccount.user.id;
+            (user as any).role = linkedGoogleAccount.user.role;
+
             await logAuthAuditEventSafe({
               event: "oauth_login",
               status: "success",
@@ -505,7 +525,7 @@ export const authOptions: NextAuthOptions = {
               },
             });
 
-            return getPostLoginRedirect(linkedGoogleAccount.user.role);
+            return true;
           }
 
           const existingUser = await prisma.user.findUnique({
@@ -542,6 +562,9 @@ export const authOptions: NextAuthOptions = {
               },
               select: { id: true },
             });
+
+            (user as any).id = existingUser.id;
+            (user as any).role = existingUser.role;
 
             await prisma.account.upsert({
               where: {
@@ -590,7 +613,7 @@ export const authOptions: NextAuthOptions = {
               },
             });
 
-            return getPostLoginRedirect(existingUser.role);
+            return true;
           }
 
           await cleanupDisposableOAuthUser(user.id);
@@ -617,13 +640,11 @@ export const authOptions: NextAuthOptions = {
           return `/auth/google-onboarding?token=${encodeURIComponent(onboardingToken)}`;
         } catch (error) {
           const email = (user.email || "").trim().toLowerCase();
-
           logger.error("[NextAuth] Google callback failure", {
             providerAccountId: account.providerAccountId,
             email,
             reason: error instanceof Error ? error.message : "oauth_callback_failed",
           });
-
           if (email) {
             await logAuthAuditEventSafe({
               event: "oauth_login",
@@ -644,10 +665,10 @@ export const authOptions: NextAuthOptions = {
       return true;
     },
 
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
-        token.id = user.id;        // 🔥 IMPORTANT
-        token.role = user.role;
+        token.id = user.id || token.sub;        // Keep stable id in JWT for downstream session mapping.
+        token.role = user.role || token.role;
         token.storeName = user.storeName;
         token.sessionVersion = (user as any).sessionVersion || 0;
         token.mustChangePassword = (user as any).mustChangePassword || false;
@@ -671,13 +692,18 @@ export const authOptions: NextAuthOptions = {
           token.mustChangePassword = false;
         }
       }
+
+      if (account?.provider === "google" && !token.role) {
+        token.role = "user";
+      }
+
       return token;
     },
 
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string;   // 🔥 IMPORTANT
-        session.user.role = token.role as string;
+        session.user.id = (token.id as string) || (token.sub as string) || "";
+        session.user.role = (token.role as string) || "user";
         session.user.storeName = (token.storeName as string | null) ?? undefined;
         session.user.mustChangePassword = Boolean(token.mustChangePassword);
       }
@@ -686,11 +712,13 @@ export const authOptions: NextAuthOptions = {
 
     async redirect({ url, baseUrl }) {
       if (url.startsWith("/")) {
-        return `${baseUrl}${url}`;
+        const sanitized = stripOAuthQueryParams(url, baseUrl);
+        return sanitized ? sanitized.toString() : `${baseUrl}/`;
       }
 
       if (url.startsWith(baseUrl)) {
-        return url;
+        const sanitized = stripOAuthQueryParams(url, baseUrl);
+        return sanitized ? sanitized.toString() : `${baseUrl}/`;
       }
 
       return `${baseUrl}/`;
@@ -729,26 +757,6 @@ export const authOptions: NextAuthOptions = {
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
-      },
-    },
-    state: {
-      name: process.env.NODE_ENV === "production" ? "__Secure-next-auth.state" : "next-auth.state",
-      options: {
-        httpOnly: true,
-        sameSite: "none",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 900,
-      },
-    },
-    pkceCodeVerifier: {
-      name: process.env.NODE_ENV === "production" ? "__Secure-next-auth.pkce.code_verifier" : "next-auth.pkce.code_verifier",
-      options: {
-        httpOnly: true,
-        sameSite: "none",
-        path: "/",
-        secure: process.env.NODE_ENV === "production",
-        maxAge: 900,
       },
     },
   },

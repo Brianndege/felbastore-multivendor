@@ -244,13 +244,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
     });
 
-    return res.status(201).json({
-      linked: true,
-      role: resolvedRole,
-      redirectUrl,
-      message: "Google account linked successfully. Continue with Google to sign in.",
-    });
-  } catch {
+    // --- CLIENT-SIDE GOOGLE SIGN-IN PATCH ---
+    // After onboarding, redirect to login-success page to trigger Google sign-in in browser
+    const callbackUrl = encodeURIComponent(redirectUrl);
+    console.log("User found and onboarded. Redirecting to login-success for client-side Google sign-in.");
+    res.writeHead(302, { Location: `/auth/login-success?callbackUrl=${callbackUrl}` });
+    res.end();
+    return;
+    // --- END PATCH ---
+  } catch (err) {
+    console.error("GOOGLE_ONBOARDING_FAILED", err);
     return res.status(500).json({ error: "GOOGLE_ONBOARDING_FAILED" });
   }
 }

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSession } from "next-auth/react";
 import { signIn } from "next-auth/react";
+import { getSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -40,11 +42,20 @@ function callbackByType(userType: UserType) {
   return "/account";
 }
 
+function getPostLoginRedirect(sessionRole?: string | null, fallback = "/account") {
+  const normalizedRole = (sessionRole || "").toLowerCase();
+  if (normalizedRole === "admin") return "/admin/dashboard";
+  if (normalizedRole === "vendor" || normalizedRole === "both") return "/vendors/dashboard";
+  if (fallback.startsWith("/") && !fallback.startsWith("//")) return fallback;
+  return "/account";
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default function LoginPage() {
+  const { data: session, status } = useSession();
   const [isLoading, setIsLoading] = useState(false);
   const [activeType, setActiveType] = useState<UserType>("user");
   const [email, setEmail] = useState("");
@@ -52,6 +63,17 @@ export default function LoginPage() {
   const debouncedEmail = useDebouncedValue(email, 300);
   const [callbackUrl, setCallbackUrl] = useState("/account");
   const router = useRouter();
+
+  useEffect(() => {
+    // Refresh session state on mount to avoid stale unauthenticated UI after OAuth redirects.
+    void getSession();
+  }, []);
+
+  useEffect(() => {
+    if (status === "authenticated" && session?.user) {
+      router.replace(getPostLoginRedirect(session.user.role, callbackUrl));
+    }
+  }, [callbackUrl, router, session, status]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -83,7 +105,7 @@ export default function LoginPage() {
       }
 
       if (err === "OAuthCallback") {
-        for (let attempt = 0; attempt < 5; attempt += 1) {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
           try {
             const response = await fetch("/api/auth/session", {
               credentials: "include",
@@ -100,7 +122,7 @@ export default function LoginPage() {
           } catch {
           }
 
-          await sleep(350);
+          await sleep(700);
         }
       }
 
@@ -115,6 +137,13 @@ export default function LoginPage() {
       }
     }
   }, [router]);
+
+  useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log("[LoginPage] Session:", session);
+    // eslint-disable-next-line no-console
+    console.log("[LoginPage] Auth status:", status);
+  }, [session, status]);
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -166,8 +195,9 @@ export default function LoginPage() {
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
+      const targetUrl = callbackUrl || callbackByType(activeType);
       await signIn("google", {
-        callbackUrl: callbackUrl || "/account",
+        callbackUrl: `/auth/login-success?callbackUrl=${encodeURIComponent(targetUrl)}`,
       }, {
         scope: "openid email profile",
         prompt: "select_account consent",
@@ -181,6 +211,14 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-[#e16b22]" />
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto flex min-h-screen items-center justify-center px-4">

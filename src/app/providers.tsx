@@ -10,7 +10,7 @@ interface ProvidersProps {
 
 export default function Providers({ children }: ProvidersProps) {
   return (
-    <SessionProvider>
+    <SessionProvider refetchOnWindowFocus refetchWhenOffline={false}>
       <CartProvider>
         {children}
       </CartProvider>
