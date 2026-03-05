@@ -138,6 +138,10 @@ function enforceApiRateLimit(request: NextRequest) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  // Always allow all /api/auth/* endpoints through (no rate limiting, no CORS, no replay, no blocking)
+  if (pathname.startsWith("/api/auth/")) {
+    return NextResponse.next();
+  }
   const adminLoginKey = process.env.ADMIN_LOGIN_KEY?.trim();
   const isProduction = process.env.NODE_ENV === "production";
   const adminAccessCookieName = "admin_login_access";
