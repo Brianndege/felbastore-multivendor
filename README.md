@@ -172,6 +172,22 @@ ADMIN_ACCESS_KEY_TTL_HOURS="24"
 ADMIN_PASSWORD_TTL_MINUTES="30"
 ```
 
+Recommended profiles:
+
+```env
+# First-time onboarding (temporary)
+ADMIN_ACCESS_KEY_TTL_HOURS="24"
+ADMIN_PASSWORD_TTL_MINUTES="60"
+```
+
+```env
+# Steady-state production (recommended)
+ADMIN_ACCESS_KEY_TTL_HOURS="24"
+ADMIN_PASSWORD_TTL_MINUTES="30"
+```
+
+Generate a fresh access link and a fresh one-time password after any TTL change.
+
 Generate strong secrets quickly:
 
 ```bash
