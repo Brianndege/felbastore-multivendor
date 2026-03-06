@@ -25,9 +25,22 @@ export default function AdminSecurityPage() {
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
   const [latestLoginUrl, setLatestLoginUrl] = useState<string | null>(null);
+  const [latestLoginUrlExpiresAt, setLatestLoginUrlExpiresAt] = useState<string | null>(null);
   const [latestPassword, setLatestPassword] = useState<string | null>(null);
+  const [latestPasswordExpiresAt, setLatestPasswordExpiresAt] = useState<string | null>(null);
   const [keys, setKeys] = useState<AccessKeyRecord[]>([]);
   const [logs, setLogs] = useState<AdminLogRecord[]>([]);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const loadData = useCallback(async () => {
     const [keysRes, logsRes] = await Promise.all([
@@ -55,6 +68,24 @@ export default function AdminSecurityPage() {
     [keys]
   );
 
+  const formatCountdown = useCallback((expiresAtIso: string | null) => {
+    if (!expiresAtIso) {
+      return null;
+    }
+
+    const expiresAtMs = new Date(expiresAtIso).getTime();
+    const remainingMs = expiresAtMs - now;
+    if (remainingMs <= 0) {
+      return "Expired";
+    }
+
+    const totalSeconds = Math.floor(remainingMs / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }, [now]);
+
   const generateLoginLink = async () => {
     setIsGeneratingLink(true);
     try {
@@ -70,6 +101,7 @@ export default function AdminSecurityPage() {
       }
 
       setLatestLoginUrl(payload.loginUrl);
+  setLatestLoginUrlExpiresAt(payload.expiresAt || null);
       await navigator.clipboard.writeText(payload.loginUrl);
       toast.success("Admin login URL generated and copied.");
       await loadData();
@@ -95,6 +127,7 @@ export default function AdminSecurityPage() {
       }
 
       setLatestPassword(payload.password);
+  setLatestPasswordExpiresAt(payload.expiresAt || null);
       await navigator.clipboard.writeText(payload.password);
       toast.success("One-time admin password generated and copied.");
       await loadData();
@@ -144,6 +177,11 @@ export default function AdminSecurityPage() {
             </Button>
             <p className="text-sm text-muted-foreground">Active keys: {activeKeyCount}</p>
             {latestLoginUrl ? <p className="break-all text-sm">Latest: {latestLoginUrl}</p> : null}
+            {latestLoginUrlExpiresAt ? (
+              <p className="text-xs text-muted-foreground">
+                Latest link expires in {formatCountdown(latestLoginUrlExpiresAt)}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
 
@@ -157,6 +195,11 @@ export default function AdminSecurityPage() {
               {isGeneratingPassword ? "Generating..." : "Generate Password"}
             </Button>
             {latestPassword ? <p className="break-all text-sm">Latest: {latestPassword}</p> : null}
+            {latestPasswordExpiresAt ? (
+              <p className="text-xs text-muted-foreground">
+                Latest password expires in {formatCountdown(latestPasswordExpiresAt)}
+              </p>
+            ) : null}
           </CardContent>
         </Card>
       </div>
