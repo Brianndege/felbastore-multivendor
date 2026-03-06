@@ -69,13 +69,13 @@ export default function CartPage() {
             <div key={item.id} className="flex gap-4 items-center border rounded-lg p-4 mb-2">
               <img
                 src={getProductImage(item.product?.images)}
-                alt={item.product.name}
+                alt={item.product?.name || "Cart product"}
                 className="h-16 w-16 object-cover rounded"
               />
               <div className="flex-1">
-                <h3 className="font-semibold">{item.product.name}</h3>
-                <div className="text-xs text-gray-500">by {item.product.vendor?.storeName || item.product.vendor?.name}</div>
-                <div className="font-medium text-violet-600 mt-1">${Number(item.product.price).toFixed(2)}</div>
+                <h3 className="font-semibold">{item.product?.name || "Product unavailable"}</h3>
+                <div className="text-xs text-gray-500">by {item.product?.vendor?.storeName || item.product?.vendor?.name || "Unknown vendor"}</div>
+                <div className="font-medium text-violet-600 mt-1">${Number(item.product?.price || 0).toFixed(2)}</div>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))} disabled={item.quantity <= 1}>-</Button>
