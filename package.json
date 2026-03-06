@@ -7,7 +7,7 @@
     "dev": "node scripts/run-next.cjs dev --auto-port",
     "dev:strict": "node scripts/run-next.cjs dev",
     "dev:auto": "node scripts/run-next.cjs dev --auto-port",
-    "build": "node scripts/run-next-build.cjs",
+    "build": "prisma generate && node scripts/run-next-build.cjs",
     "netlify:build": "netlify build",
     "netlify:deploy:preview": "netlify deploy --build",
     "netlify:deploy:prod": "netlify deploy --build --prod",

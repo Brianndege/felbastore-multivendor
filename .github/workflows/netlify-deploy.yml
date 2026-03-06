@@ -38,11 +38,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate Netlify Site Environment (Preview)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          node -e "const required=['NEXTAUTH_SECRET','NEXTAUTH_URL','DATABASE_URL']; const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const rows=JSON.parse(raw); const names=new Set((Array.isArray(rows)?rows:[]).map((r)=>r.key).filter(Boolean)); const missing=required.filter((k)=>!names.has(k)); if(missing.length){ console.error('Missing Netlify env vars: '+missing.join(', ')); process.exit(1);} console.log('Netlify env preflight passed');"
+
       - name: Deploy Preview
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx netlify deploy --build --json
+        run: npx netlify deploy --build --json --debug
 
   deploy-production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
@@ -60,11 +67,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate Netlify Site Environment (Production)
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          node -e "const required=['NEXTAUTH_SECRET','NEXTAUTH_URL','DATABASE_URL']; const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const rows=JSON.parse(raw); const names=new Set((Array.isArray(rows)?rows:[]).map((r)=>r.key).filter(Boolean)); const missing=required.filter((k)=>!names.has(k)); if(missing.length){ console.error('Missing Netlify env vars: '+missing.join(', ')); process.exit(1);} console.log('Netlify env preflight passed');"
+
       - name: Deploy Production
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx netlify deploy --build --prod --json
+        run: npx netlify deploy --build --prod --json --debug
 
   smoke-auth-production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
