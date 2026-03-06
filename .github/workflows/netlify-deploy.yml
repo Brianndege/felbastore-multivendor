@@ -56,6 +56,10 @@ jobs:
             if npx netlify deploy --build --json --debug 2>&1 | tee netlify-preview-deploy.log; then
               exit 0
             fi
+            if grep -E "Site deploy was successfully initiated|Site is live" netlify-preview-deploy.log >/dev/null; then
+              echo "Netlify preview deploy appears successful despite CLI non-zero exit; continuing"
+              exit 0
+            fi
             echo "Netlify preview deploy attempt ${attempt} failed"
             tail -n 200 netlify-preview-deploy.log || true
             if [ "$attempt" -eq 2 ]; then
@@ -98,6 +102,10 @@ jobs:
           for attempt in 1 2; do
             echo "Starting Netlify production deploy (attempt ${attempt}/2)"
             if npx netlify deploy --build --prod --json --debug 2>&1 | tee netlify-production-deploy.log; then
+              exit 0
+            fi
+            if grep -E "Site deploy was successfully initiated|Site is live" netlify-production-deploy.log >/dev/null; then
+              echo "Netlify production deploy appears successful despite CLI non-zero exit; continuing"
               exit 0
             fi
             echo "Netlify production deploy attempt ${attempt} failed"
