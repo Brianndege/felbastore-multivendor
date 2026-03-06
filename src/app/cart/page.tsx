@@ -1,14 +1,43 @@
 "use client";
 
 import { useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 
+function getProductImage(images: unknown): string {
+  if (Array.isArray(images)) {
+    const first = images.find((image) => typeof image === "string" && image.trim().length > 0);
+    return first || "/placeholder-product.jpg";
+  }
+
+  if (typeof images === "string") {
+    const trimmed = images.trim();
+    if (!trimmed) {
+      return "/placeholder-product.jpg";
+    }
+
+    // Support both raw URLs and legacy JSON-stringified arrays.
+    if (trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          const first = parsed.find((image) => typeof image === "string" && image.trim().length > 0);
+          return first || "/placeholder-product.jpg";
+        }
+      } catch {
+        return "/placeholder-product.jpg";
+      }
+    }
+
+    return trimmed;
+  }
+
+  return "/placeholder-product.jpg";
+}
+
 export default function CartPage() {
-  const { data: session, status } = useSession();
-  const router = useRouter();
+  const { status } = useSession();
   const { items, updateQuantity, removeFromCart, getCartTotal, getCartCount } = useCart();
 
   if (status === "loading") {
@@ -39,7 +68,7 @@ export default function CartPage() {
           {items.map((item) => (
             <div key={item.id} className="flex gap-4 items-center border rounded-lg p-4 mb-2">
               <img
-                src={JSON.parse(item.product.images || '[]')[0] || "/placeholder-product.jpg"}
+                src={getProductImage(item.product?.images)}
                 alt={item.product.name}
                 className="h-16 w-16 object-cover rounded"
               />
