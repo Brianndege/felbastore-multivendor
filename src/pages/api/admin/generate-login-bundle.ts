@@ -56,9 +56,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const ipAddress = getClientIp(req);
   const limiterKey = `admin-generate-login-bundle:${hashIdentifier(ipAddress)}`;
-  const limit = applyAuthRateLimit(limiterKey, { windowMs: 15 * 60 * 1000, max: 5 });
+  const limit = applyAuthRateLimit(limiterKey, { windowMs: 15 * 60 * 1000, max: 1 });
   if (!limit.allowed) {
-    return res.status(429).json({ error: "Too many requests" });
+    return res.status(429).json({
+      error: "Generation is locked for 15 minutes after each bundle.",
+      attempts: limit.attempts,
+      maxAttempts: limit.max,
+      retryAfterSeconds: limit.retryAfterSeconds,
+    });
   }
 
   const session = await getServerSession(req, res, authOptions);
@@ -110,5 +115,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     loginUrl,
     password: rawPassword,
     expiresAt: expiresAt.toISOString(),
+    attempts: limit.attempts,
+    maxAttempts: limit.max,
+    retryAfterSeconds: limit.retryAfterSeconds,
   });
 }

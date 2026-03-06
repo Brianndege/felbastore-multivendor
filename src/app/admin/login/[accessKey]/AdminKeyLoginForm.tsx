@@ -18,9 +18,29 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   CredentialsSignin: "Login failed. Check email, access link, and generated password.",
 };
 
+function parseAuthError(errorCode?: string | null) {
+  if (!errorCode) {
+    return { code: "", attempts: null as number | null, maxAttempts: null as number | null, retryAfterSeconds: null as number | null };
+  }
+
+  const [code, attemptsRaw, maxRaw, retryAfterRaw] = errorCode.split(":");
+  const attempts = Number.isFinite(Number(attemptsRaw)) ? Number(attemptsRaw) : null;
+  const maxAttempts = Number.isFinite(Number(maxRaw)) ? Number(maxRaw) : null;
+  const retryAfterSeconds = Number.isFinite(Number(retryAfterRaw)) ? Number(retryAfterRaw) : null;
+
+  return { code, attempts, maxAttempts, retryAfterSeconds };
+}
+
 function getAuthErrorMessage(errorCode?: string | null) {
-  if (!errorCode) return "Login failed. Please try again.";
-  return AUTH_ERROR_MESSAGES[errorCode] || "Login failed. Please verify your secure access credentials.";
+  const { code, attempts, maxAttempts, retryAfterSeconds } = parseAuthError(errorCode);
+  const base = AUTH_ERROR_MESSAGES[code] || "Login failed. Please verify your secure access credentials.";
+
+  const attemptsText = attempts && maxAttempts ? `Attempt ${attempts} of ${maxAttempts}.` : "";
+  const retryText = code === "ADMIN_LOGIN_RATE_LIMITED" && retryAfterSeconds
+    ? ` Retry after ${Math.ceil(retryAfterSeconds / 60)} minute(s).`
+    : "";
+
+  return `${base}${attemptsText ? ` ${attemptsText}` : ""}${retryText}`.trim();
 }
 
 function formatCountdown(msRemaining: number) {

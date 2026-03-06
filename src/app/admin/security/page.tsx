@@ -29,6 +29,8 @@ export default function AdminSecurityPage() {
   const [latestLoginUrlExpiresAt, setLatestLoginUrlExpiresAt] = useState<string | null>(null);
   const [latestPassword, setLatestPassword] = useState<string | null>(null);
   const [latestPasswordExpiresAt, setLatestPasswordExpiresAt] = useState<string | null>(null);
+  const [bundleAttemptLabel, setBundleAttemptLabel] = useState<string | null>(null);
+  const [bundleCooldownUntil, setBundleCooldownUntil] = useState<number | null>(null);
   const [keys, setKeys] = useState<AccessKeyRecord[]>([]);
   const [logs, setLogs] = useState<AdminLogRecord[]>([]);
   const [now, setNow] = useState(() => Date.now());
@@ -87,6 +89,21 @@ export default function AdminSecurityPage() {
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   }, [now]);
 
+  const formatDuration = useCallback((msRemaining: number | null) => {
+    if (!msRemaining || msRemaining <= 0) {
+      return "00:00:00";
+    }
+
+    const totalSeconds = Math.floor(msRemaining / 1000);
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }, []);
+
+  const bundleCooldownRemainingMs = bundleCooldownUntil ? Math.max(0, bundleCooldownUntil - now) : 0;
+  const isBundleGenerationLocked = bundleCooldownRemainingMs > 0;
+
   const generateLoginLink = async () => {
     setIsGeneratingLink(true);
     try {
@@ -124,6 +141,12 @@ export default function AdminSecurityPage() {
 
       const payload = await res.json();
       if (!res.ok) {
+        if (typeof payload?.attempts === "number" && typeof payload?.maxAttempts === "number") {
+          setBundleAttemptLabel(`${payload.attempts}/${payload.maxAttempts}`);
+        }
+        if (typeof payload?.retryAfterSeconds === "number") {
+          setBundleCooldownUntil(Date.now() + (payload.retryAfterSeconds * 1000));
+        }
         throw new Error(payload.error || "Failed to generate login bundle");
       }
 
@@ -134,6 +157,12 @@ export default function AdminSecurityPage() {
       setLatestLoginUrlExpiresAt(expiresAt);
       setLatestPassword(payload.password);
       setLatestPasswordExpiresAt(expiresAt);
+      if (typeof payload?.attempts === "number" && typeof payload?.maxAttempts === "number") {
+        setBundleAttemptLabel(`${payload.attempts}/${payload.maxAttempts}`);
+      }
+      if (typeof payload?.retryAfterSeconds === "number") {
+        setBundleCooldownUntil(Date.now() + (payload.retryAfterSeconds * 1000));
+      }
       await navigator.clipboard.writeText(clipboardValue);
       toast.success("Admin login URL and password generated with a shared expiry and copied.");
       await loadData();
@@ -204,9 +233,17 @@ export default function AdminSecurityPage() {
             <CardDescription>Create a secure `/admin/login/&lt;key&gt;` URL, or generate URL + password together.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            <Button onClick={() => void generateLoginBundle()} disabled={isGeneratingBundle}>
+            <Button onClick={() => void generateLoginBundle()} disabled={isGeneratingBundle || isBundleGenerationLocked}>
               {isGeneratingBundle ? "Generating bundle..." : "Generate Login + Password"}
             </Button>
+            {bundleAttemptLabel ? (
+              <p className="text-xs text-muted-foreground">Bundle generation attempts this window: {bundleAttemptLabel}</p>
+            ) : null}
+            {isBundleGenerationLocked ? (
+              <p className="text-xs text-amber-600">
+                Bundle generation locked for 15 minutes after each use. Time remaining: {formatDuration(bundleCooldownRemainingMs)}
+              </p>
+            ) : null}
             <Button onClick={() => void generateLoginLink()} disabled={isGeneratingLink}>
               {isGeneratingLink ? "Generating..." : "Generate Login Link"}
             </Button>

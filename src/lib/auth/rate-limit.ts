@@ -27,6 +27,8 @@ export function applyAuthRateLimit(key: string, config: LimitConfig) {
       requiresCaptcha: false,
       retryAfterSeconds: Math.ceil(config.windowMs / 1000),
       remaining: Math.max(0, config.max - 1),
+      attempts: 1,
+      max: config.max,
     };
   }
 
@@ -39,6 +41,8 @@ export function applyAuthRateLimit(key: string, config: LimitConfig) {
       requiresCaptcha: true,
       retryAfterSeconds: Math.ceil((existing.resetAt - now) / 1000),
       remaining: 0,
+      attempts: existing.count,
+      max: config.max,
     };
   }
 
@@ -47,5 +51,7 @@ export function applyAuthRateLimit(key: string, config: LimitConfig) {
     requiresCaptcha: typeof config.captchaAfter === "number" && existing.count >= config.captchaAfter,
     retryAfterSeconds: Math.ceil((existing.resetAt - now) / 1000),
     remaining: Math.max(0, config.max - existing.count),
+    attempts: existing.count,
+    max: config.max,
   };
 }

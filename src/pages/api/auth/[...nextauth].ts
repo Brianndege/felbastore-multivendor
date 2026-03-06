@@ -372,6 +372,7 @@ export const authOptions: NextAuthOptions = {
         const userAgent = (req?.headers?.["user-agent"] as string | undefined) || "";
         const limiterKey = `admin-secure-login:${ipAddress}:${hashIdentifier(normalizedEmail)}`;
         const loginLimit = applyAuthRateLimit(limiterKey, { windowMs: 15 * 60 * 1000, max: 5 });
+        const attemptToken = `${loginLimit.attempts}:${loginLimit.max}`;
 
         if (!loginLimit.allowed) {
           await logAdminSecurityEvent({
@@ -380,7 +381,7 @@ export const authOptions: NextAuthOptions = {
             success: false,
             event: "login_failure",
           });
-          throw new Error("ADMIN_LOGIN_RATE_LIMITED");
+          throw new Error(`ADMIN_LOGIN_RATE_LIMITED:${attemptToken}:${loginLimit.retryAfterSeconds}`);
         }
 
         if (!isAllowedAdminGenerator(normalizedEmail)) {
@@ -390,7 +391,7 @@ export const authOptions: NextAuthOptions = {
             success: false,
             event: "login_failure",
           });
-          throw new Error("ADMIN_EMAIL_NOT_ALLOWED");
+          throw new Error(`ADMIN_EMAIL_NOT_ALLOWED:${attemptToken}`);
         }
 
         const user = await prisma.user.findUnique({
@@ -406,7 +407,7 @@ export const authOptions: NextAuthOptions = {
 
         if (!user || user.role !== "admin") {
           await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
-          throw new Error("INVALID_ADMIN_LOGIN");
+          throw new Error(`INVALID_ADMIN_LOGIN:${attemptToken}`);
         }
 
         const validAccess = await findValidAdminAccessKey(credentials.accessKey);
@@ -421,7 +422,7 @@ export const authOptions: NextAuthOptions = {
             userAgent,
             metadata: { reason: "access_key_invalid_or_expired" },
           });
-          throw new Error("ADMIN_ACCESS_KEY_INVALID");
+          throw new Error(`ADMIN_ACCESS_KEY_INVALID:${attemptToken}`);
         }
 
         const consumedPassword = await consumeAdminPassword(credentials.password);
@@ -436,13 +437,13 @@ export const authOptions: NextAuthOptions = {
             userAgent,
             metadata: { reason: "one_time_password_invalid_or_expired" },
           });
-          throw new Error("ADMIN_PASSWORD_INVALID");
+          throw new Error(`ADMIN_PASSWORD_INVALID:${attemptToken}`);
         }
 
         const consumedAccess = await consumeAdminAccessKey(credentials.accessKey);
         if (!consumedAccess) {
           await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
-          throw new Error("ADMIN_ACCESS_KEY_INVALID");
+          throw new Error(`ADMIN_ACCESS_KEY_INVALID:${attemptToken}`);
         }
 
         await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: true, event: "login_success" });
