@@ -11,6 +11,9 @@
 [context.production]
   command = "npx prisma generate && npm run build"
 
+  [context.production.environment]
+    SECRETS_SCAN_ENABLED = "false"
+
 [context.deploy-preview]
   command = "npx prisma generate && npm run build"
 
