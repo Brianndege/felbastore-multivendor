@@ -8,20 +8,17 @@ import { logger } from "@/lib/logger";
 import bcrypt from "bcryptjs";
 import { findAccountByEmail, markEmailVerified } from "@/lib/auth/account";
 import { OTP_TTL_MS, OTP_VERIFY_RATE_LIMIT } from "@/lib/auth/constants";
-import { applyAuthRateLimit } from "@/lib/auth/rate-limit";
+import { applyAuthRateLimit, resetAuthRateLimit } from "@/lib/auth/rate-limit";
 import { getClientIpAddress, hashIdentifier } from "@/lib/auth/security";
 import { logAuthAuditEvent } from "@/lib/auth/audit";
 import { createOtpChallenge, verifyOtpChallenge } from "@/lib/auth/otp-service";
 import { sendOtpEmail } from "@/lib/email";
 import { createGoogleOnboardingToken, verifyGoogleAccessToken, verifyGoogleIdToken } from "@/lib/auth/google-oauth";
 import {
-  consumeAdminAccessKey,
-  consumeAdminPassword,
-  consumeAdminPasswordForBundle,
   ensureAdminSecuritySchemaCompatibility,
-  findValidAdminAccessKey,
   isAllowedAdminGenerator,
   logAdminSecurityEvent,
+  validateAndConsumeAdminLoginCredentials,
 } from "@/lib/admin/security-auth";
 
 const providers: NextAuthOptions["providers"] = [];
@@ -151,6 +148,27 @@ async function logAuthAuditEventSafe(payload: Parameters<typeof logAuthAuditEven
       reason: error instanceof Error ? error.message : "unknown_audit_error",
     });
   }
+}
+
+async function logAdminSecurityEventSafe(payload: Parameters<typeof logAdminSecurityEvent>[0]) {
+  try {
+    await logAdminSecurityEvent(payload);
+  } catch (error) {
+    logger.warn("[NextAuth] Failed to write admin security log", {
+      event: payload.event,
+      email: payload.email,
+      reason: error instanceof Error ? error.message : "unknown_admin_security_log_error",
+    });
+  }
+}
+
+function logAdminSecureDebug(stage: string, metadata: Record<string, unknown>) {
+  if (process.env.ADMIN_AUTH_DEBUG === "true") {
+    console.log(`[AdminSecure] ${stage}`, metadata);
+    return;
+  }
+
+  logger.info(`[AdminSecure] ${stage}`, metadata);
 }
 
 if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
@@ -375,8 +393,17 @@ export const authOptions: NextAuthOptions = {
         const loginLimit = applyAuthRateLimit(limiterKey, { windowMs: 15 * 60 * 1000, max: 5 });
         const attemptToken = `${loginLimit.attempts}:${loginLimit.max}`;
 
+        logAdminSecureDebug("login_attempt", {
+          email: normalizedEmail,
+          ipAddress,
+          attempts: loginLimit.attempts,
+          maxAttempts: loginLimit.max,
+          accessKeyLength: credentials.accessKey.length,
+          passwordLength: credentials.password.length,
+        });
+
         if (!loginLimit.allowed) {
-          await logAdminSecurityEvent({
+          await logAdminSecurityEventSafe({
             email: normalizedEmail,
             ip: ipAddress,
             success: false,
@@ -386,7 +413,7 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!isAllowedAdminGenerator(normalizedEmail)) {
-          await logAdminSecurityEvent({
+          await logAdminSecurityEventSafe({
             email: normalizedEmail,
             ip: ipAddress,
             success: false,
@@ -407,57 +434,82 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (!user || user.role !== "admin") {
-          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
-          throw new Error(`INVALID_ADMIN_LOGIN:${attemptToken}`);
+          await logAdminSecurityEventSafe({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
+          throw new Error(`ADMIN_ACCOUNT_NOT_READY:${attemptToken}`);
         }
 
-        const validAccess = await findValidAdminAccessKey(credentials.accessKey);
-        if (!validAccess) {
-          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
-          await logAuthAuditEvent({
+        const consumedCredentials = await validateAndConsumeAdminLoginCredentials({
+          rawAccessKey: credentials.accessKey,
+          rawPassword: credentials.password,
+        });
+
+        if (!consumedCredentials.ok) {
+          logAdminSecureDebug("credential_validation_failed", {
+            email: normalizedEmail,
+            reason: consumedCredentials.reason,
+            accessKeyState: consumedCredentials.accessKeyState,
+            passwordState: consumedCredentials.passwordState,
+            attempts: loginLimit.attempts,
+            maxAttempts: loginLimit.max,
+          });
+
+          await logAdminSecurityEventSafe({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
+          await logAuthAuditEventSafe({
             event: "admin_secure_login",
             status: "failure",
             email: normalizedEmail,
             userType: "admin",
             ipAddress,
             userAgent,
-            metadata: { reason: "access_key_invalid_or_expired" },
+            metadata: {
+              reason: consumedCredentials.reason,
+              accessKeyState: consumedCredentials.accessKeyState,
+              passwordState: consumedCredentials.passwordState,
+            },
           });
-          throw new Error(`ADMIN_ACCESS_KEY_INVALID:${attemptToken}`);
-        }
 
-        const consumedPassword = validAccess.bundleId
-          ? await consumeAdminPasswordForBundle(credentials.password, validAccess.bundleId)
-          : await consumeAdminPassword(credentials.password);
-        if (!consumedPassword) {
-          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
-          await logAuthAuditEvent({
-            event: "admin_secure_login",
-            status: "failure",
-            email: normalizedEmail,
-            userType: "admin",
-            ipAddress,
-            userAgent,
-            metadata: { reason: "one_time_password_invalid_or_expired" },
-          });
+          if (consumedCredentials.reason === "access_key_expired") {
+            throw new Error(`ADMIN_ACCESS_KEY_EXPIRED:${attemptToken}`);
+          }
+          if (consumedCredentials.reason === "access_key_used") {
+            throw new Error(`ADMIN_ACCESS_KEY_USED:${attemptToken}`);
+          }
+          if (consumedCredentials.reason === "password_expired") {
+            throw new Error(`ADMIN_PASSWORD_EXPIRED:${attemptToken}`);
+          }
+          if (consumedCredentials.reason === "password_used") {
+            throw new Error(`ADMIN_PASSWORD_USED:${attemptToken}`);
+          }
+          if (consumedCredentials.reason === "credentials_already_used") {
+            throw new Error(`ADMIN_CREDENTIALS_ALREADY_USED:${attemptToken}`);
+          }
+          if (consumedCredentials.reason === "access_key_invalid") {
+            throw new Error(`ADMIN_ACCESS_KEY_INVALID:${attemptToken}`);
+          }
+
           throw new Error(`ADMIN_PASSWORD_INVALID:${attemptToken}`);
         }
 
-        const consumedAccess = await consumeAdminAccessKey(credentials.accessKey);
-        if (!consumedAccess) {
-          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
-          throw new Error(`ADMIN_ACCESS_KEY_INVALID:${attemptToken}`);
-        }
+        logAdminSecureDebug("credential_validation_succeeded", {
+          email: normalizedEmail,
+          accessKeyId: consumedCredentials.access.id,
+          passwordId: consumedCredentials.password.id,
+          accessKeyExpiresAt: consumedCredentials.access.expiresAt.toISOString(),
+          passwordExpiresAt: consumedCredentials.password.expiresAt.toISOString(),
+          bundleId: consumedCredentials.access.bundleId,
+        });
 
-        await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: true, event: "login_success" });
-        await logAuthAuditEvent({
+        resetAuthRateLimit(limiterKey);
+
+        await logAdminSecurityEventSafe({ email: normalizedEmail, ip: ipAddress, success: true, event: "login_success" });
+        await logAuthAuditEventSafe({
           event: "admin_secure_login",
           status: "success",
           email: normalizedEmail,
           userType: "admin",
           ipAddress,
           userAgent,
-          metadata: { accessKeyId: consumedAccess.id },
+          metadata: { accessKeyId: consumedCredentials.access.id },
         });
 
         return {
@@ -468,8 +520,8 @@ export const authOptions: NextAuthOptions = {
           sessionVersion: user.sessionVersion || 0,
           mustChangePassword: false,
           adminSecurityVerified: true,
-          adminAccessKeyId: consumedAccess.id,
-          adminAccessKeyExpiresAt: consumedAccess.expiresAt.toISOString(),
+          adminAccessKeyId: consumedCredentials.access.id,
+          adminAccessKeyExpiresAt: consumedCredentials.access.expiresAt.toISOString(),
           adminSessionExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         };
       },

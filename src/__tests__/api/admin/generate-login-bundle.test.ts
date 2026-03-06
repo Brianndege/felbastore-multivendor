@@ -20,6 +20,14 @@ jest.mock("@/lib/auth/security", () => ({
   hashIdentifier: jest.fn(() => "ip_hash"),
 }));
 
+jest.mock("@/lib/prisma", () => ({
+  prisma: {
+    user: {
+      findUnique: jest.fn(),
+    },
+  },
+}));
+
 jest.mock("@/lib/admin/security-auth", () => ({
   createAdminLoginBundle: jest.fn(),
   ensureAdminSecuritySchemaCompatibility: jest.fn(),
@@ -30,6 +38,7 @@ jest.mock("@/lib/admin/security-auth", () => ({
 import { getServerSession } from "next-auth/next";
 import { enforceCsrfOrigin } from "@/lib/csrf";
 import { applyAuthRateLimit } from "@/lib/auth/rate-limit";
+import { prisma } from "@/lib/prisma";
 import {
   createAdminLoginBundle,
   ensureAdminSecuritySchemaCompatibility,
@@ -143,6 +152,7 @@ describe("admin login bundle generation flow", () => {
     (ensureAdminSecuritySchemaCompatibility as jest.Mock).mockResolvedValue(undefined);
     (isAllowedAdminGenerator as jest.Mock).mockReturnValue(true);
     (logAdminSecurityEvent as jest.Mock).mockResolvedValue(undefined);
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue({ id: "admin_1", role: "admin" });
     (createAdminLoginBundle as jest.Mock).mockResolvedValue({
       rawKey: "key123",
       rawPassword: "Pass#123456",
@@ -222,5 +232,23 @@ describe("admin login bundle generation flow", () => {
       maxAttempts: 1,
       retryAfterSeconds: 900,
     });
+  });
+
+  it("blocks bundle generation when admin account is not ready", async () => {
+    (getServerSession as jest.Mock).mockResolvedValue({
+      user: {
+        role: "admin",
+        email: "ndegebrian4@gmail.com",
+        adminSecurityVerified: true,
+        adminAccessKeyId: "key_1",
+      },
+    });
+    (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
+
+    const { req, res } = createJsonReqRes();
+    await generateBundleHandler(req, res);
+
+    expect(res.statusCode).toBe(409);
+    expect(res.payload).toEqual({ error: "Admin account not ready. Run admin:ensure and retry." });
   });
 });

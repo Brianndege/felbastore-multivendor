@@ -5,6 +5,7 @@ jest.mock("@/lib/prisma", () => ({
     $queryRaw: jest.fn(),
     $executeRaw: jest.fn(),
     $executeRawUnsafe: jest.fn(),
+    $transaction: jest.fn(),
   },
 }));
 

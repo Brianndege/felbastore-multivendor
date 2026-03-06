@@ -4,6 +4,7 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { enforceCsrfOrigin } from "@/lib/csrf";
 import { applyAuthRateLimit } from "@/lib/auth/rate-limit";
 import { hashIdentifier } from "@/lib/auth/security";
+import { prisma } from "@/lib/prisma";
 import {
   createAdminLoginBundle,
   ensureAdminSecuritySchemaCompatibility,
@@ -98,6 +99,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await logAdminSecurityEvent({ email, ip: ipAddress, success: false, event: "key_generation" });
     await logAdminSecurityEvent({ email, ip: ipAddress, success: false, event: "password_generation" });
     return res.status(403).json({ error: "Only the configured admin email can generate admin login credentials" });
+  }
+
+  const adminUser = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, role: true },
+  });
+  if (!adminUser || adminUser.role !== "admin") {
+    return res.status(409).json({ error: "Admin account not ready. Run admin:ensure and retry." });
   }
 
   const baseUrl = getBaseUrl(req);

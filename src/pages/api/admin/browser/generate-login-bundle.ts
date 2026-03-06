@@ -1,6 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { applyAuthRateLimit } from "@/lib/auth/rate-limit";
 import { hashIdentifier } from "@/lib/auth/security";
+import { prisma } from "@/lib/prisma";
 import {
   createAdminLoginBundle,
   ensureAdminSecuritySchemaCompatibility,
@@ -85,6 +86,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     await logAdminSecurityEvent({ email: providedEmail, ip: ipAddress, success: false, event: "key_generation" });
     await logAdminSecurityEvent({ email: providedEmail, ip: ipAddress, success: false, event: "password_generation" });
     return res.status(403).json({ error: "Email not allowed" });
+  }
+
+  const adminUser = await prisma.user.findUnique({
+    where: { email: providedEmail },
+    select: { id: true, role: true },
+  });
+  if (!adminUser || adminUser.role !== "admin") {
+    return res.status(409).json({ error: "Admin account not ready. Run admin:ensure and retry." });
   }
 
   const baseUrl = getBaseUrl(req);

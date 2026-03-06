@@ -13,8 +13,14 @@ const AUTH_ERROR_MESSAGES: Record<string, string> = {
   INVALID_ADMIN_LOGIN: "Invalid login credentials or expired key/password.",
   ADMIN_LOGIN_RATE_LIMITED: "Too many login attempts. Wait 15 minutes, then generate a fresh login bundle and try once.",
   ADMIN_ACCESS_KEY_INVALID: "The admin access link is invalid or expired.",
+  ADMIN_ACCESS_KEY_EXPIRED: "This admin access link has expired. Generate a new login bundle.",
+  ADMIN_ACCESS_KEY_USED: "This admin access link has already been used. Generate a new login bundle.",
   ADMIN_PASSWORD_INVALID: "The generated admin password is invalid or expired.",
+  ADMIN_PASSWORD_EXPIRED: "This generated admin password has expired. Generate a new login bundle.",
+  ADMIN_PASSWORD_USED: "This generated admin password has already been used. Generate a new login bundle.",
+  ADMIN_CREDENTIALS_ALREADY_USED: "Credentials were consumed by another attempt. Generate a new login bundle and try once.",
   ADMIN_EMAIL_NOT_ALLOWED: "This email is not allowed to generate or use admin security credentials.",
+  ADMIN_ACCOUNT_NOT_READY: "Admin account is not ready. Run admin:ensure (or verify admin role) and try again.",
   CredentialsSignin: "Login failed. Check email, access link, and generated password.",
 };
 

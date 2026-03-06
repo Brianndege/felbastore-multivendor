@@ -24,6 +24,43 @@ export type AdminLoginLogRecord = {
   createdAt: Date;
 };
 
+export type AdminCredentialFailureReason =
+  | "access_key_invalid"
+  | "access_key_expired"
+  | "access_key_used"
+  | "password_invalid"
+  | "password_expired"
+  | "password_used"
+  | "credentials_already_used";
+
+type AdminAccessKeyCandidate = {
+  id: string;
+  expiresAt: Date;
+  used: boolean;
+  bundleId: string | null;
+};
+
+type AdminPasswordCandidate = {
+  id: string;
+  hashedPassword: string;
+  expiresAt: Date;
+  used: boolean;
+  bundleId: string | null;
+};
+
+export type ValidateAndConsumeAdminLoginResult =
+  | {
+      ok: true;
+      access: { id: string; expiresAt: Date; bundleId: string | null };
+      password: { id: string; expiresAt: Date; bundleId: string | null };
+    }
+  | {
+      ok: false;
+      reason: AdminCredentialFailureReason;
+      accessKeyState: "not_found" | "expired" | "used" | "valid";
+      passwordState: "unknown" | "not_found" | "expired" | "used" | "valid";
+    };
+
 export async function ensureAdminSecuritySchemaCompatibility() {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "AdminAccessKey" (
@@ -175,6 +212,170 @@ export async function findValidAdminAccessKey(rawKey: string) {
   `;
 
   return result[0] || null;
+}
+
+async function invalidateExpiredAccessKeyById(id: string) {
+  await prisma.$executeRaw`
+    UPDATE "AdminAccessKey"
+    SET "used" = true, "usedAt" = NOW()
+    WHERE "id" = ${id} AND "used" = false AND "expiresAt" <= NOW()
+  `;
+}
+
+async function invalidateExpiredPasswordById(id: string) {
+  await prisma.$executeRaw`
+    UPDATE "AdminPassword"
+    SET "used" = true, "usedAt" = NOW()
+    WHERE "id" = ${id} AND "used" = false AND "expiresAt" <= NOW()
+  `;
+}
+
+async function findAdminAccessKeyCandidate(rawKey: string): Promise<AdminAccessKeyCandidate | null> {
+  const hashedKey = hashSecret(rawKey);
+  const result = await prisma.$queryRaw<Array<AdminAccessKeyCandidate>>`
+    SELECT "id", "expiresAt", "used", "bundleId"
+    FROM "AdminAccessKey"
+    WHERE "hashedKey" = ${hashedKey}
+    ORDER BY "createdAt" DESC
+    LIMIT 1
+  `;
+
+  return result[0] || null;
+}
+
+async function findAdminPasswordCandidate(rawPassword: string, bundleId: string | null): Promise<AdminPasswordCandidate | null> {
+  const candidates = bundleId
+    ? await prisma.$queryRaw<Array<AdminPasswordCandidate>>`
+      SELECT "id", "hashedPassword", "expiresAt", "used", "bundleId"
+      FROM "AdminPassword"
+      WHERE "bundleId" = ${bundleId}
+      ORDER BY "createdAt" DESC
+      LIMIT 100
+    `
+    : await prisma.$queryRaw<Array<AdminPasswordCandidate>>`
+      SELECT "id", "hashedPassword", "expiresAt", "used", "bundleId"
+      FROM "AdminPassword"
+      WHERE "bundleId" IS NULL
+      ORDER BY "createdAt" DESC
+      LIMIT 100
+    `;
+
+  for (const candidate of candidates) {
+    const isMatch = await bcrypt.compare(rawPassword, candidate.hashedPassword);
+    if (isMatch) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+export async function validateAndConsumeAdminLoginCredentials(input: {
+  rawAccessKey: string;
+  rawPassword: string;
+}): Promise<ValidateAndConsumeAdminLoginResult> {
+  const accessKey = await findAdminAccessKeyCandidate(input.rawAccessKey);
+
+  if (!accessKey) {
+    return {
+      ok: false,
+      reason: "access_key_invalid",
+      accessKeyState: "not_found",
+      passwordState: "unknown",
+    };
+  }
+
+  if (accessKey.used) {
+    return {
+      ok: false,
+      reason: "access_key_used",
+      accessKeyState: "used",
+      passwordState: "unknown",
+    };
+  }
+
+  if (accessKey.expiresAt <= new Date()) {
+    await invalidateExpiredAccessKeyById(accessKey.id);
+    return {
+      ok: false,
+      reason: "access_key_expired",
+      accessKeyState: "expired",
+      passwordState: "unknown",
+    };
+  }
+
+  const password = await findAdminPasswordCandidate(input.rawPassword, accessKey.bundleId || null);
+  if (!password) {
+    return {
+      ok: false,
+      reason: "password_invalid",
+      accessKeyState: "valid",
+      passwordState: "not_found",
+    };
+  }
+
+  if (password.used) {
+    return {
+      ok: false,
+      reason: "password_used",
+      accessKeyState: "valid",
+      passwordState: "used",
+    };
+  }
+
+  if (password.expiresAt <= new Date()) {
+    await invalidateExpiredPasswordById(password.id);
+    return {
+      ok: false,
+      reason: "password_expired",
+      accessKeyState: "valid",
+      passwordState: "expired",
+    };
+  }
+
+  try {
+    const consumed = await prisma.$transaction(async (tx) => {
+      const consumedPassword = await tx.$queryRaw<Array<{ id: string; expiresAt: Date; bundleId: string | null }>>`
+        UPDATE "AdminPassword"
+        SET "used" = true, "usedAt" = NOW()
+        WHERE "id" = ${password.id} AND "used" = false AND "expiresAt" > NOW()
+        RETURNING "id", "expiresAt", "bundleId"
+      `;
+
+      if (!consumedPassword[0]) {
+        throw new Error("ADMIN_PASSWORD_ALREADY_CONSUMED");
+      }
+
+      const consumedAccess = await tx.$queryRaw<Array<{ id: string; expiresAt: Date; bundleId: string | null }>>`
+        UPDATE "AdminAccessKey"
+        SET "used" = true, "usedAt" = NOW()
+        WHERE "id" = ${accessKey.id} AND "used" = false AND "expiresAt" > NOW()
+        RETURNING "id", "expiresAt", "bundleId"
+      `;
+
+      if (!consumedAccess[0]) {
+        throw new Error("ADMIN_ACCESS_KEY_ALREADY_CONSUMED");
+      }
+
+      return {
+        access: consumedAccess[0],
+        password: consumedPassword[0],
+      };
+    });
+
+    return {
+      ok: true,
+      access: consumed.access,
+      password: consumed.password,
+    };
+  } catch {
+    return {
+      ok: false,
+      reason: "credentials_already_used",
+      accessKeyState: "valid",
+      passwordState: "valid",
+    };
+  }
 }
 
 export async function consumeAdminAccessKey(rawKey: string) {

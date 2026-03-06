@@ -11,6 +11,10 @@ type LimitEntry = {
 
 const memoryStore = new Map<string, LimitEntry>();
 
+export function resetAuthRateLimit(key: string) {
+  memoryStore.delete(key);
+}
+
 export function applyAuthRateLimit(key: string, config: LimitConfig) {
   // In-memory limiter is a safe fallback; replace with Redis for multi-instance consistency.
   const now = Date.now();
