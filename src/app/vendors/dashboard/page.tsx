@@ -49,6 +49,18 @@ type StoreSettingsForm = {
 
 type StoreSettingsErrors = Partial<Record<keyof StoreSettingsForm, string>>;
 
+type DeliveryZone = {
+  id: string;
+  name: string;
+  mode: "radius" | "polygon";
+  centerLat: number | null;
+  centerLng: number | null;
+  radiusKm: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export default function VendorDashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -66,6 +78,16 @@ export default function VendorDashboardPage() {
 
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const [settingsErrors, setSettingsErrors] = useState<StoreSettingsErrors>({});
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  const [isLoadingDeliveryZones, setIsLoadingDeliveryZones] = useState(false);
+  const [isSavingDeliveryZone, setIsSavingDeliveryZone] = useState(false);
+  const [deliveryZoneForm, setDeliveryZoneForm] = useState({
+    name: "",
+    centerLat: "",
+    centerLng: "",
+    radiusKm: "5",
+    isActive: true,
+  });
   const [settings, setSettings] = useState<StoreSettingsForm>({
     storeName: "",
     tagline: "",
@@ -116,6 +138,25 @@ export default function VendorDashboardPage() {
     } catch (error) {
       console.error("Error fetching inventory:", error);
       setInventory(getMockInventory());
+    }
+  }, []);
+
+  const fetchDeliveryZones = useCallback(async () => {
+    setIsLoadingDeliveryZones(true);
+    try {
+      const response = await fetch("/api/vendor/delivery-zones");
+      const payload = (await response.json()) as { zones?: DeliveryZone[]; error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load delivery zones");
+      }
+
+      setDeliveryZones(Array.isArray(payload.zones) ? payload.zones : []);
+    } catch (error) {
+      console.error("Error fetching delivery zones:", error);
+      setDeliveryZones([]);
+    } finally {
+      setIsLoadingDeliveryZones(false);
     }
   }, []);
 
@@ -227,7 +268,8 @@ export default function VendorDashboardPage() {
     fetchAnalytics();
     fetchInventory();
     fetchNotifications();
-  }, [session, status, router, fetchAnalytics, fetchInventory, fetchNotifications]);
+    fetchDeliveryZones();
+  }, [session, status, router, fetchAnalytics, fetchInventory, fetchNotifications, fetchDeliveryZones]);
 
   useEffect(() => {
     if (!session?.user) return;
@@ -355,6 +397,115 @@ export default function VendorDashboardPage() {
       toast.success("Store settings saved successfully.");
     } finally {
       setIsSavingSettings(false);
+    }
+  };
+
+  const createDeliveryZone = async () => {
+    const name = deliveryZoneForm.name.trim();
+    const centerLat = Number(deliveryZoneForm.centerLat);
+    const centerLng = Number(deliveryZoneForm.centerLng);
+    const radiusKm = Number(deliveryZoneForm.radiusKm);
+
+    if (!name) {
+      toast.error("Delivery zone name is required.");
+      return;
+    }
+
+    if (!Number.isFinite(centerLat) || centerLat < -90 || centerLat > 90) {
+      toast.error("Latitude must be between -90 and 90.");
+      return;
+    }
+
+    if (!Number.isFinite(centerLng) || centerLng < -180 || centerLng > 180) {
+      toast.error("Longitude must be between -180 and 180.");
+      return;
+    }
+
+    if (!Number.isFinite(radiusKm) || radiusKm <= 0) {
+      toast.error("Radius must be greater than 0.");
+      return;
+    }
+
+    setIsSavingDeliveryZone(true);
+    try {
+      const response = await fetch("/api/vendor/delivery-zones", {
+        method: "POST",
+        headers: getCsrfHeaders(),
+        body: JSON.stringify({
+          name,
+          centerLat,
+          centerLng,
+          radiusKm,
+          isActive: deliveryZoneForm.isActive,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to create delivery zone");
+      }
+
+      setDeliveryZoneForm({
+        name: "",
+        centerLat: "",
+        centerLng: "",
+        radiusKm: "5",
+        isActive: true,
+      });
+      toast.success("Delivery zone saved.");
+      await fetchDeliveryZones();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create delivery zone");
+    } finally {
+      setIsSavingDeliveryZone(false);
+    }
+  };
+
+  const toggleDeliveryZone = async (zone: DeliveryZone) => {
+    try {
+      const response = await fetch(`/api/vendor/delivery-zones/${zone.id}`, {
+        method: "PUT",
+        headers: getCsrfHeaders(),
+        body: JSON.stringify({
+          name: zone.name,
+          centerLat: zone.centerLat,
+          centerLng: zone.centerLng,
+          radiusKm: zone.radiusKm,
+          isActive: !zone.isActive,
+        }),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to update delivery zone");
+      }
+
+      await fetchDeliveryZones();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update delivery zone");
+    }
+  };
+
+  const deleteDeliveryZone = async (zoneId: string) => {
+    if (!window.confirm("Delete this delivery zone?")) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/vendor/delivery-zones/${zoneId}`, {
+        method: "DELETE",
+        headers: getCsrfHeaders(),
+      });
+
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to delete delivery zone");
+      }
+
+      toast.success("Delivery zone deleted.");
+      await fetchDeliveryZones();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete delivery zone");
     }
   };
 
@@ -706,6 +857,103 @@ export default function VendorDashboardPage() {
                 <Label htmlFor="processing-days">Processing Days *</Label>
                 <Input id="processing-days" type="number" value={settings.processingDays} onChange={(event) => updateSettings("processingDays", event.target.value)} aria-invalid={Boolean(settingsErrors.processingDays)} />
                 {settingsErrors.processingDays && <p className="text-xs text-destructive">{settingsErrors.processingDays}</p>}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-lg">Delivery Zones</CardTitle>
+              <CardDescription>
+                Add active delivery coverage to remove "No active delivery zone" errors during checkout.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 md:grid-cols-5">
+                <div className="space-y-1 md:col-span-2">
+                  <Label htmlFor="zone-name">Zone Name</Label>
+                  <Input
+                    id="zone-name"
+                    value={deliveryZoneForm.name}
+                    onChange={(event) => setDeliveryZoneForm((prev) => ({ ...prev, name: event.target.value }))}
+                    placeholder="Nairobi CBD"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="zone-lat">Latitude</Label>
+                  <Input
+                    id="zone-lat"
+                    type="number"
+                    value={deliveryZoneForm.centerLat}
+                    onChange={(event) => setDeliveryZoneForm((prev) => ({ ...prev, centerLat: event.target.value }))}
+                    placeholder="-1.286"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="zone-lng">Longitude</Label>
+                  <Input
+                    id="zone-lng"
+                    type="number"
+                    value={deliveryZoneForm.centerLng}
+                    onChange={(event) => setDeliveryZoneForm((prev) => ({ ...prev, centerLng: event.target.value }))}
+                    placeholder="36.817"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="zone-radius">Radius (km)</Label>
+                  <Input
+                    id="zone-radius"
+                    type="number"
+                    min="0.1"
+                    step="0.1"
+                    value={deliveryZoneForm.radiusKm}
+                    onChange={(event) => setDeliveryZoneForm((prev) => ({ ...prev, radiusKm: event.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-md border p-3">
+                <label className="flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={deliveryZoneForm.isActive}
+                    onChange={(event) => setDeliveryZoneForm((prev) => ({ ...prev, isActive: event.target.checked }))}
+                  />
+                  Activate this zone now
+                </label>
+                <Button className="touch-target" onClick={createDeliveryZone} disabled={isSavingDeliveryZone}>
+                  {isSavingDeliveryZone ? "Saving..." : "Add Delivery Zone"}
+                </Button>
+              </div>
+
+              <div className="space-y-2">
+                {isLoadingDeliveryZones ? (
+                  <p className="text-sm text-muted-foreground">Loading delivery zones...</p>
+                ) : deliveryZones.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No delivery zones yet. Add at least one active zone for checkout eligibility.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {deliveryZones.map((zone) => (
+                      <li key={zone.id} className="flex flex-col gap-2 rounded-md border p-3 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="font-medium">{zone.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Radius: {zone.radiusKm ?? 0} km | Center: {zone.centerLat ?? 0}, {zone.centerLng ?? 0}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={zone.isActive ? "default" : "secondary"}>{zone.isActive ? "Active" : "Inactive"}</Badge>
+                          <Button variant="outline" size="sm" onClick={() => void toggleDeliveryZone(zone)}>
+                            {zone.isActive ? "Deactivate" : "Activate"}
+                          </Button>
+                          <Button variant="destructive" size="sm" onClick={() => void deleteDeliveryZone(zone.id)}>
+                            Delete
+                          </Button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </CardContent>
           </Card>
