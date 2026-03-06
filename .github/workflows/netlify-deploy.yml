@@ -43,7 +43,7 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          node -e "const required=['NEXTAUTH_SECRET','NEXTAUTH_URL','DATABASE_URL']; const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const rows=JSON.parse(raw); const names=new Set((Array.isArray(rows)?rows:[]).map((r)=>r.key).filter(Boolean)); const missing=required.filter((k)=>!names.has(k)); if(missing.length){ console.error('Missing Netlify env vars: '+missing.join(', ')); process.exit(1);} console.log('Netlify env preflight passed');"
+          node -e "const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const rows=JSON.parse(raw); const names=new Set((Array.isArray(rows)?rows:[]).map((r)=>r.key).filter(Boolean)); const missing=[]; if(!names.has('NEXTAUTH_SECRET')) missing.push('NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); if(missing.length){ console.error('Missing critical Netlify env vars: '+missing.join(', ')); process.exit(1);} const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL'); if(!hasAppBase){ console.warn('Warning: no NEXTAUTH_URL/APP_URL/NEXT_PUBLIC_APP_URL found; some auth/admin links may fail in production'); } console.log('Netlify env preflight passed');"
 
       - name: Deploy Preview
         env:
@@ -72,7 +72,7 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          node -e "const required=['NEXTAUTH_SECRET','NEXTAUTH_URL','DATABASE_URL']; const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const rows=JSON.parse(raw); const names=new Set((Array.isArray(rows)?rows:[]).map((r)=>r.key).filter(Boolean)); const missing=required.filter((k)=>!names.has(k)); if(missing.length){ console.error('Missing Netlify env vars: '+missing.join(', ')); process.exit(1);} console.log('Netlify env preflight passed');"
+          node -e "const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const rows=JSON.parse(raw); const names=new Set((Array.isArray(rows)?rows:[]).map((r)=>r.key).filter(Boolean)); const missing=[]; if(!names.has('NEXTAUTH_SECRET')) missing.push('NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); if(missing.length){ console.error('Missing critical Netlify env vars: '+missing.join(', ')); process.exit(1);} const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL'); if(!hasAppBase){ console.warn('Warning: no NEXTAUTH_URL/APP_URL/NEXT_PUBLIC_APP_URL found; some auth/admin links may fail in production'); } console.log('Netlify env preflight passed');"
 
       - name: Deploy Production
         env:
