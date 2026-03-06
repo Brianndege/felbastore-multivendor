@@ -380,7 +380,7 @@ export const authOptions: NextAuthOptions = {
             success: false,
             event: "login_failure",
           });
-          throw new Error("INVALID_ADMIN_LOGIN");
+          throw new Error("ADMIN_LOGIN_RATE_LIMITED");
         }
 
         if (!isAllowedAdminGenerator(normalizedEmail)) {

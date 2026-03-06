@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 const AUTH_ERROR_MESSAGES: Record<string, string> = {
   INVALID_ADMIN_LOGIN: "Invalid login credentials or expired key/password.",
+  ADMIN_LOGIN_RATE_LIMITED: "Too many login attempts. Wait 15 minutes, then generate a fresh login bundle and try once.",
   ADMIN_ACCESS_KEY_INVALID: "The admin access link is invalid or expired.",
   ADMIN_PASSWORD_INVALID: "The generated admin password is invalid or expired.",
   ADMIN_EMAIL_NOT_ALLOWED: "This email is not allowed to generate or use admin security credentials.",
