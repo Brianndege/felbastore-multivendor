@@ -62,6 +62,10 @@ export async function ensureAdminSecuritySchemaCompatibility() {
 
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "AdminAccessKey_expiresAt_used_idx" ON "AdminAccessKey"("expiresAt", "used")');
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "AdminPassword_expiresAt_used_idx" ON "AdminPassword"("expiresAt", "used")');
+  await prisma.$executeRawUnsafe('ALTER TABLE "AdminAccessKey" ADD COLUMN IF NOT EXISTS "bundleId" TEXT');
+  await prisma.$executeRawUnsafe('ALTER TABLE "AdminPassword" ADD COLUMN IF NOT EXISTS "bundleId" TEXT');
+  await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "AdminAccessKey_bundleId_idx" ON "AdminAccessKey"("bundleId")');
+  await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "AdminPassword_bundleId_idx" ON "AdminPassword"("bundleId")');
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "AdminLoginLog_email_createdAt_idx" ON "AdminLoginLog"("email", "createdAt")');
   await prisma.$executeRawUnsafe('CREATE INDEX IF NOT EXISTS "AdminLoginLog_event_createdAt_idx" ON "AdminLoginLog"("event", "createdAt")');
 }
@@ -115,8 +119,8 @@ export async function createAdminAccessKey(generatedBy: string, ttlHours = ADMIN
   const id = crypto.randomUUID();
 
   await prisma.$executeRaw`
-    INSERT INTO "AdminAccessKey" ("id", "hashedKey", "expiresAt", "used", "generatedBy", "createdAt")
-    VALUES (${id}, ${hashedKey}, ${expiresAt}, false, ${generatedBy}, NOW())
+    INSERT INTO "AdminAccessKey" ("id", "hashedKey", "expiresAt", "used", "generatedBy", "bundleId", "createdAt")
+    VALUES (${id}, ${hashedKey}, ${expiresAt}, false, ${generatedBy}, NULL, NOW())
   `;
 
   return { id, rawKey, expiresAt };
@@ -129,8 +133,8 @@ export async function createAdminPassword(generatedBy: string, ttlMinutes = ADMI
   const id = crypto.randomUUID();
 
   await prisma.$executeRaw`
-    INSERT INTO "AdminPassword" ("id", "hashedPassword", "expiresAt", "used", "generatedBy", "createdAt")
-    VALUES (${id}, ${hashedPassword}, ${expiresAt}, false, ${generatedBy}, NOW())
+    INSERT INTO "AdminPassword" ("id", "hashedPassword", "expiresAt", "used", "generatedBy", "bundleId", "createdAt")
+    VALUES (${id}, ${hashedPassword}, ${expiresAt}, false, ${generatedBy}, NULL, NOW())
   `;
 
   return { id, rawPassword, expiresAt };
@@ -144,25 +148,26 @@ export async function createAdminLoginBundle(generatedBy: string, ttlMinutes = A
   const expiresAt = new Date(Date.now() + Math.max(1, ttlMinutes) * 60 * 1000);
   const accessKeyId = crypto.randomUUID();
   const passwordId = crypto.randomUUID();
+  const bundleId = crypto.randomUUID();
 
   await prisma.$transaction([
     prisma.$executeRaw`
-      INSERT INTO "AdminAccessKey" ("id", "hashedKey", "expiresAt", "used", "generatedBy", "createdAt")
-      VALUES (${accessKeyId}, ${hashedKey}, ${expiresAt}, false, ${generatedBy}, NOW())
+      INSERT INTO "AdminAccessKey" ("id", "hashedKey", "expiresAt", "used", "generatedBy", "bundleId", "createdAt")
+      VALUES (${accessKeyId}, ${hashedKey}, ${expiresAt}, false, ${generatedBy}, ${bundleId}, NOW())
     `,
     prisma.$executeRaw`
-      INSERT INTO "AdminPassword" ("id", "hashedPassword", "expiresAt", "used", "generatedBy", "createdAt")
-      VALUES (${passwordId}, ${hashedPassword}, ${expiresAt}, false, ${generatedBy}, NOW())
+      INSERT INTO "AdminPassword" ("id", "hashedPassword", "expiresAt", "used", "generatedBy", "bundleId", "createdAt")
+      VALUES (${passwordId}, ${hashedPassword}, ${expiresAt}, false, ${generatedBy}, ${bundleId}, NOW())
     `,
   ]);
 
-  return { accessKeyId, passwordId, rawKey, rawPassword, expiresAt };
+  return { accessKeyId, passwordId, bundleId, rawKey, rawPassword, expiresAt };
 }
 
 export async function findValidAdminAccessKey(rawKey: string) {
   const hashedKey = hashSecret(rawKey);
-  const result = await prisma.$queryRaw<Array<{ id: string; expiresAt: Date }>>`
-    SELECT "id", "expiresAt"
+  const result = await prisma.$queryRaw<Array<{ id: string; expiresAt: Date; bundleId: string | null }>>`
+    SELECT "id", "expiresAt", "bundleId"
     FROM "AdminAccessKey"
     WHERE "hashedKey" = ${hashedKey} AND "used" = false AND "expiresAt" > NOW()
     ORDER BY "createdAt" DESC
@@ -174,11 +179,11 @@ export async function findValidAdminAccessKey(rawKey: string) {
 
 export async function consumeAdminAccessKey(rawKey: string) {
   const hashedKey = hashSecret(rawKey);
-  const result = await prisma.$queryRaw<Array<{ id: string; expiresAt: Date }>>`
+  const result = await prisma.$queryRaw<Array<{ id: string; expiresAt: Date; bundleId: string | null }>>`
     UPDATE "AdminAccessKey"
     SET "used" = true, "usedAt" = NOW()
     WHERE "hashedKey" = ${hashedKey} AND "used" = false AND "expiresAt" > NOW()
-    RETURNING "id", "expiresAt"
+    RETURNING "id", "expiresAt", "bundleId"
   `;
 
   return result[0] || null;
@@ -189,6 +194,36 @@ export async function consumeAdminPassword(rawPassword: string) {
     SELECT "id", "hashedPassword", "expiresAt"
     FROM "AdminPassword"
     WHERE "used" = false AND "expiresAt" > NOW()
+    ORDER BY "createdAt" DESC
+    LIMIT 50
+  `;
+
+  for (const candidate of candidates) {
+    const isMatch = await bcrypt.compare(rawPassword, candidate.hashedPassword);
+    if (!isMatch) {
+      continue;
+    }
+
+    const result = await prisma.$queryRaw<Array<{ id: string; expiresAt: Date }>>`
+      UPDATE "AdminPassword"
+      SET "used" = true, "usedAt" = NOW()
+      WHERE "id" = ${candidate.id} AND "used" = false AND "expiresAt" > NOW()
+      RETURNING "id", "expiresAt"
+    `;
+
+    if (result[0]) {
+      return result[0];
+    }
+  }
+
+  return null;
+}
+
+export async function consumeAdminPasswordForBundle(rawPassword: string, bundleId: string) {
+  const candidates = await prisma.$queryRaw<Array<{ id: string; hashedPassword: string; expiresAt: Date }>>`
+    SELECT "id", "hashedPassword", "expiresAt"
+    FROM "AdminPassword"
+    WHERE "used" = false AND "expiresAt" > NOW() AND "bundleId" = ${bundleId}
     ORDER BY "createdAt" DESC
     LIMIT 50
   `;

@@ -56,9 +56,17 @@ function formatCountdown(msRemaining: number) {
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-export function AdminKeyLoginForm({ accessKey, accessKeyExpiresAt }: { accessKey: string; accessKeyExpiresAt: string }) {
+export function AdminKeyLoginForm({
+  accessKey,
+  accessKeyExpiresAt,
+  prefilledEmail,
+}: {
+  accessKey: string;
+  accessKeyExpiresAt: string;
+  prefilledEmail?: string;
+}) {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(prefilledEmail || "");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -131,7 +139,7 @@ export function AdminKeyLoginForm({ accessKey, accessKeyExpiresAt }: { accessKey
             <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">Admin Email</Label>
-                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+                <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required readOnly={Boolean(prefilledEmail)} />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Generated Password</Label>

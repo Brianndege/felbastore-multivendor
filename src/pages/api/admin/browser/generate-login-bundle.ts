@@ -93,7 +93,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { rawKey, rawPassword, expiresAt } = await createAdminLoginBundle(providedEmail);
-  const loginUrl = `${baseUrl}/admin/login/${rawKey}`;
+  const loginUrl = `${baseUrl}/admin/login/${rawKey}?email=${encodeURIComponent(providedEmail)}`;
 
   await logAdminSecurityEvent({ email: providedEmail, ip: ipAddress, success: true, event: "key_generation" });
   await logAdminSecurityEvent({ email: providedEmail, ip: ipAddress, success: true, event: "password_generation" });

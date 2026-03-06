@@ -17,6 +17,7 @@ import { createGoogleOnboardingToken, verifyGoogleAccessToken, verifyGoogleIdTok
 import {
   consumeAdminAccessKey,
   consumeAdminPassword,
+  consumeAdminPasswordForBundle,
   ensureAdminSecuritySchemaCompatibility,
   findValidAdminAccessKey,
   isAllowedAdminGenerator,
@@ -425,7 +426,9 @@ export const authOptions: NextAuthOptions = {
           throw new Error(`ADMIN_ACCESS_KEY_INVALID:${attemptToken}`);
         }
 
-        const consumedPassword = await consumeAdminPassword(credentials.password);
+        const consumedPassword = validAccess.bundleId
+          ? await consumeAdminPasswordForBundle(credentials.password, validAccess.bundleId)
+          : await consumeAdminPassword(credentials.password);
         if (!consumedPassword) {
           await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
           await logAuthAuditEvent({
