@@ -42,8 +42,15 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (typeof status === "string" && status.trim()) {
     const normalizedStatus = status.trim().toLowerCase() as ProductStatusFilter;
     if (normalizedStatus === "pending") {
-      where.isApproved = false;
-      where.workflowStatus = "PENDING_APPROVAL";
+      where.AND = [
+        ...(Array.isArray(where.AND) ? where.AND : []),
+        {
+          OR: [
+            { workflowStatus: "PENDING_APPROVAL", isApproved: false },
+            { status: "pending", isApproved: false },
+          ],
+        },
+      ];
     } else if (normalizedStatus === "approved") {
       where.isApproved = true;
     } else if (normalizedStatus === "rejected") {
@@ -92,7 +99,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       take: pageSizeNumber,
     }),
     prisma.product.count({ where }),
-    prisma.product.count({ where: { workflowStatus: "PENDING_APPROVAL", isApproved: false } }),
+    prisma.product.count({
+      where: {
+        OR: [
+          { workflowStatus: "PENDING_APPROVAL", isApproved: false },
+          { status: "pending", isApproved: false },
+        ],
+      },
+    }),
   ]);
 
   return res.status(200).json({

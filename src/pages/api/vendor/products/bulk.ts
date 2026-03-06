@@ -45,6 +45,7 @@ type PreparedBulkProduct = {
     sku: string | null;
     status: string;
     isApproved: boolean;
+    workflowStatus: "DRAFT" | "PENDING_APPROVAL" | "APPROVED";
   };
 };
 
@@ -65,6 +66,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const vendorId = session.user.id;
   const moderationState = getProductCreateModerationState();
+  const moderationWorkflowStatus = moderationState.isApproved ? "APPROVED" : "PENDING_APPROVAL";
   const items = Array.isArray(req.body) ? (req.body as BulkProductInput[]) : [];
 
   if (items.length === 0) {
@@ -169,6 +171,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           sku,
           status: moderationState.status,
           isApproved: moderationState.isApproved,
+          workflowStatus: moderationWorkflowStatus,
         },
       };
     });
