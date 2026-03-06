@@ -28,6 +28,7 @@ interface Product {
   category: string;
   status: "active" | "inactive" | "low_stock";
   images: string[];
+  workflowStatus?: "DRAFT" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
 }
 
 type PaymentMethodKind = "CARD" | "MPESA" | "BANK_TRANSFER" | "WALLET";
@@ -753,7 +754,18 @@ export default function VendorProductsPage() {
         throw new Error(failureMessage);
       }
 
-      toast.success("Product saved successfully!");
+      let savedProduct: Product | null = null;
+      try {
+        savedProduct = (await res.json()) as Product;
+      } catch {
+        savedProduct = null;
+      }
+
+      if (!editingProduct && savedProduct?.workflowStatus === "PENDING_APPROVAL") {
+        toast.success("Product submitted for admin approval. It will appear on the homepage after approval.");
+      } else {
+        toast.success("Product saved successfully!");
+      }
       fetchProducts();
       clearDraft();
       setShowPublishSuccess(!editingProduct);
@@ -1465,6 +1477,7 @@ export default function VendorProductsPage() {
                 <p className="text-xs text-gray-600">
                   Media files: {form.images.length} new, {form.existingImages.length} existing
                 </p>
+                <p className="text-xs text-amber-700">Published products require admin approval before they appear on the homepage.</p>
                 {showPublishSuccess && <p className="text-xs font-medium text-green-600">Product published successfully.</p>}
               </div>
             )}
