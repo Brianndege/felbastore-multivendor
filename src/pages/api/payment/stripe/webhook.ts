@@ -69,22 +69,21 @@ async function handleSuccessfulPayment(paymentIntent: Stripe.PaymentIntent) {
     return;
   }
 
-  // Check if order is already paid to avoid duplicate processing
-  if (order.paymentStatus === "paid") {
-    logger.info(`[Stripe Webhook] Order ${order.id} already marked as paid, skipping`);
-    return;
-  }
-
   // Use a transaction for all related updates
   await prisma.$transaction(async (tx) => {
-    // Update order status
-    await tx.order.update({
-      where: { id: order.id },
+    // Idempotent gate: only one execution path may transition order to paid.
+    const orderUpdate = await tx.order.updateMany({
+      where: { id: order.id, paymentStatus: { notIn: ["paid", "approved"] } },
       data: {
         paymentStatus: "paid",
         status: "confirmed",
       },
     });
+
+    if (orderUpdate.count === 0) {
+      logger.info(`[Stripe Webhook] Order ${order.id} already paid or approved, skipping duplicate processing`);
+      return;
+    }
 
     // Get order items to update inventory
     const orderItems = await tx.orderItem.findMany({
@@ -170,13 +169,18 @@ async function handleFailedPayment(paymentIntent: Stripe.PaymentIntent) {
     return;
   }
 
-  // Update order status
-  await prisma.order.update({
-    where: { id: order.id },
+  // Do not downgrade already-paid orders to failed.
+  const updated = await prisma.order.updateMany({
+    where: { id: order.id, paymentStatus: { notIn: ["paid", "approved"] } },
     data: {
       paymentStatus: "failed",
     },
   });
+
+  if (updated.count === 0) {
+    logger.info(`[Stripe Webhook] Skipping failed transition for already-paid order ${order.id}`);
+    return;
+  }
 
   // Create notification for user about failed payment
   await prisma.notification.create({

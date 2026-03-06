@@ -28,7 +28,7 @@ export const getPaymentProvider = (providerId: string): PaymentProvider | null =
 
 // Generate a unique idempotency key based on order ID and payment method
 export const generateIdempotencyKey = (orderId: string, paymentMethod: string): string => {
-  return `${orderId}-${paymentMethod}-${Date.now()}`;
+  return `${orderId}-${paymentMethod}`;
 };
 
 // Calculate the total amount from cart items with validation

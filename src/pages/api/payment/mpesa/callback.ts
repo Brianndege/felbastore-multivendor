@@ -41,14 +41,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (paymentResult.success) {
       // Use a transaction for all related updates
       await prisma.$transaction(async (tx) => {
-        // Update order status
-        await tx.order.update({
-          where: { id: order.id },
+        // Idempotent gate: only one successful transition can process inventory/notifications.
+        const orderUpdate = await tx.order.updateMany({
+          where: { id: order.id, paymentStatus: { notIn: ["paid", "approved"] } },
           data: {
             paymentStatus: "paid",
             status: "confirmed",
           },
         });
+
+        if (orderUpdate.count === 0) {
+          logger.info(`[MPesa Callback] Order ${order.id} already paid or approved, skipping duplicate processing`);
+          return;
+        }
 
         // Get order items to update inventory
         const orderItems = await tx.orderItem.findMany({
@@ -120,12 +125,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       logger.info(`[MPesa Callback] Successfully processed payment for order ${order.id}`);
     } else {
       // Payment failed
-      await prisma.order.update({
-        where: { id: order.id },
+      const updated = await prisma.order.updateMany({
+        where: { id: order.id, paymentStatus: { notIn: ["paid", "approved"] } },
         data: {
           paymentStatus: "failed",
         },
       });
+
+      if (updated.count === 0) {
+        logger.info(`[MPesa Callback] Skipping failed transition for already-paid order ${order.id}`);
+        return res.status(200).json({ received: true, success: false });
+      }
 
       // Create notification for user about failed payment
       await prisma.notification.create({
