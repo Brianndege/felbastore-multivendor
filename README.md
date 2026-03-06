@@ -152,12 +152,13 @@ npm run admin:ensure
 Optional environment variables for admin seeding:
 
 ```env
-ADMIN_DEFAULT_EMAIL="admin@felbastore.local"
+ADMIN_DEFAULT_EMAIL="ndegebrian4@gmail.com"
 ADMIN_DEFAULT_PASSWORD="Admin@12345!"
 ADMIN_DEFAULT_NAME="Platform Admin"
 ```
 
 Production note: `ADMIN_DEFAULT_EMAIL` must be set for hardened admin key/password generation.
+The email entered during `/admin/login/<ACCESS_KEY>` must exactly match `ADMIN_DEFAULT_EMAIL`.
 
 Optional environment variable for admin login route protection:
 

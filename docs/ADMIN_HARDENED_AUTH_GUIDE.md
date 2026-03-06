@@ -33,7 +33,7 @@ Body:
 
 ```json
 {
-  "email": "admin@felbastore.local"
+  "email": "ndegebrian4@gmail.com"
 }
 ```
 
@@ -59,7 +59,7 @@ Body:
 
 ```json
 {
-  "email": "admin@felbastore.local"
+  "email": "ndegebrian4@gmail.com"
 }
 ```
 
