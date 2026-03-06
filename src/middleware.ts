@@ -14,6 +14,7 @@ type RateLimitEntry = {
 
 const edgeApiRateLimitStore = new Map<string, RateLimitEntry>();
 const googleCallbackReplayStore = new Map<string, number>();
+const adminRouteRateLimitStore = new Map<string, RateLimitEntry>();
 
 const GOOGLE_CALLBACK_REPLAY_WINDOW_MS = 5 * 60_000;
 const GOOGLE_CALLBACK_CODE_COOKIE = "__gauth_code_seen";
@@ -136,15 +137,36 @@ function enforceApiRateLimit(request: NextRequest) {
   return { allowed: true, remaining: maxRequests - current.count, resetInMs: Math.max(0, current.resetAt - now) };
 }
 
+function enforceAdminLoginPathRateLimit(request: NextRequest) {
+  const forwardedFor = request.headers.get("x-forwarded-for") || "";
+  const clientIp = forwardedFor.split(",")[0]?.trim() || "unknown";
+  const now = Date.now();
+  const windowMs = 15 * 60 * 1000;
+  const maxRequests = 20;
+  const key = `admin-login:${clientIp}:${Math.floor(now / windowMs)}`;
+  const current = adminRouteRateLimitStore.get(key);
+
+  if (!current || current.resetAt <= now) {
+    adminRouteRateLimitStore.set(key, { count: 1, resetAt: now + windowMs });
+    return true;
+  }
+
+  if (current.count >= maxRequests) {
+    return false;
+  }
+
+  current.count += 1;
+  adminRouteRateLimitStore.set(key, current);
+  return true;
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   // Always allow all /api/auth/* endpoints through (no rate limiting, no CORS, no replay, no blocking)
   if (pathname.startsWith("/api/auth/")) {
     return NextResponse.next();
   }
-  const adminLoginKey = process.env.ADMIN_LOGIN_KEY?.trim();
   const isProduction = process.env.NODE_ENV === "production";
-  const adminAccessCookieName = "admin_login_access";
   const forwardedProto = request.headers.get("x-forwarded-proto");
   const host = request.headers.get("host") || "";
   const isLocalHost = host.startsWith("localhost") || host.startsWith("127.0.0.1");
@@ -219,6 +241,34 @@ export async function middleware(request: NextRequest) {
       return preflightResponse;
     }
 
+    const isAdminBootstrapEndpoint = pathname === "/api/admin/generate-access" || pathname === "/api/admin/generate-password";
+    if (pathname.startsWith("/api/admin/") && !isAdminBootstrapEndpoint) {
+      const apiToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+      const adminSessionExpiry = apiToken?.adminSessionExpiresAt ? new Date(String(apiToken.adminSessionExpiresAt)).getTime() : 0;
+      const hasActiveAdminSession = Boolean(
+        apiToken
+        && apiToken.role === "admin"
+        && apiToken.adminSecurityVerified
+        && apiToken.adminAccessKeyId
+        && Number.isFinite(adminSessionExpiry)
+        && Date.now() < adminSessionExpiry
+      );
+
+      if (!hasActiveAdminSession) {
+        const unauthorizedResponse = new NextResponse(
+          JSON.stringify({ error: "Unauthorized" }),
+          {
+            status: 401,
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+            },
+          }
+        );
+        applyCorsHeaders(request, unauthorizedResponse);
+        return unauthorizedResponse;
+      }
+    }
+
     const limit = enforceApiRateLimit(request);
     if (!limit.allowed) {
       const rateLimitedResponse = new NextResponse(
@@ -289,65 +339,35 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/auth/admin-login")) {
-    if (token?.role === "admin") {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  if (pathname.startsWith("/admin/login/")) {
+    if (!enforceAdminLoginPathRateLimit(request)) {
+      return NextResponse.redirect(new URL("/", request.url));
+    }
+
+    if (token?.role === "admin" && token.adminSecurityVerified) {
       return NextResponse.redirect(new URL("/admin/dashboard", request.url));
-    }
-
-    if (isProduction && !adminLoginKey) {
-      return new NextResponse("Not Found", { status: 404 });
-    }
-
-    if (adminLoginKey) {
-      const accessKeyFromQuery = request.nextUrl.searchParams.get("k");
-      const accessKeyFromHeader = request.headers.get("x-admin-access-key");
-      const providedAccessKey = accessKeyFromQuery || accessKeyFromHeader;
-      const cookieAccessKey = request.cookies.get(adminAccessCookieName)?.value;
-      const hasValidCookie = cookieAccessKey === adminLoginKey;
-
-      if (!hasValidCookie && providedAccessKey !== adminLoginKey) {
-        return new NextResponse("Not Found", { status: 404 });
-      }
-
-      if (!hasValidCookie && accessKeyFromQuery === adminLoginKey) {
-        const redirectUrl = request.nextUrl.clone();
-        redirectUrl.searchParams.delete("k");
-        const response = NextResponse.redirect(redirectUrl);
-
-        response.cookies.set(adminAccessCookieName, adminLoginKey, {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: "strict",
-          maxAge: 600,
-          path: "/auth/admin-login",
-        });
-
-        return response;
-      }
-
-      if (!hasValidCookie && accessKeyFromHeader === adminLoginKey) {
-        const response = NextResponse.next();
-
-        response.cookies.set(adminAccessCookieName, adminLoginKey, {
-          httpOnly: true,
-          secure: isProduction,
-          sameSite: "strict",
-          maxAge: 600,
-          path: "/auth/admin-login",
-        });
-
-        return response;
-      }
-    }
-
-    if (token && token.role !== "admin") {
-      const homeUrl = new URL("/", request.url);
-      homeUrl.searchParams.set("error", "unauthorized");
-      return NextResponse.redirect(homeUrl);
     }
   }
 
   if (pathname.startsWith("/admin") || pathname.startsWith("/dashboard/admin")) {
-    if (!token || token.role !== "admin") {
+    if (pathname.startsWith("/admin/login/")) {
+      return NextResponse.next();
+    }
+
+    const adminSessionExpiry = token?.adminSessionExpiresAt ? new Date(String(token.adminSessionExpiresAt)).getTime() : 0;
+    const hasActiveAdminSession = Boolean(
+      token
+      && token.role === "admin"
+      && token.adminSecurityVerified
+      && token.adminAccessKeyId
+      && Number.isFinite(adminSessionExpiry)
+      && Date.now() < adminSessionExpiry
+    );
+
+    if (!hasActiveAdminSession) {
       const loginUrl = new URL("/auth/login", request.url);
       loginUrl.searchParams.set("error", "unauthorized");
       return NextResponse.redirect(loginUrl);

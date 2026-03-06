@@ -11,6 +11,10 @@ declare module "next-auth" {
       storeName?: string;
       sessionVersion?: number;
       mustChangePassword?: boolean;
+      adminSecurityVerified?: boolean;
+      adminAccessKeyId?: string;
+      adminAccessKeyExpiresAt?: string;
+      adminSessionExpiresAt?: string;
     };
   }
 
@@ -23,6 +27,10 @@ declare module "next-auth" {
     storeName?: string;
     sessionVersion?: number;
     mustChangePassword?: boolean;
+    adminSecurityVerified?: boolean;
+    adminAccessKeyId?: string;
+    adminAccessKeyExpiresAt?: string;
+    adminSessionExpiresAt?: string;
   }
 }
 
@@ -32,5 +40,9 @@ declare module "next-auth/jwt" {
     storeName?: string;
     sessionVersion?: number;
     mustChangePassword?: boolean;
+    adminSecurityVerified?: boolean;
+    adminAccessKeyId?: string | null;
+    adminAccessKeyExpiresAt?: string | null;
+    adminSessionExpiresAt?: string | null;
   }
 }

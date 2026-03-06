@@ -70,6 +70,36 @@ npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma 
 npx prisma db push
 ```
 
+#### Option D: Baseline an Existing Database (No Reset)
+Use this when your DB already has tables but `prisma/migrations` is empty (or out of sync) and `migrate dev` reports drift.
+
+1. Generate a baseline migration from current schema:
+```bash
+mkdir -p prisma/migrations/20260305_baseline
+npx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script > prisma/migrations/20260305_baseline/migration.sql
+```
+
+2. Ensure migration lock file exists:
+```toml
+# prisma/migrations/migration_lock.toml
+provider = "postgresql"
+```
+
+3. Mark baseline as already applied:
+```bash
+npx prisma migrate resolve --applied 20260305_baseline
+```
+
+4. Verify status:
+```bash
+npx prisma migrate status
+```
+
+After this, future schema changes can use normal migrations:
+```bash
+npx prisma migrate dev --name <change_name>
+```
+
 ### Step 3: Verify Setup
 Your database should now have these tables:
 - `User` - For customer accounts

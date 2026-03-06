@@ -470,6 +470,45 @@ model AuthAuditLog {
   @@index([status, createdAt])
 }
 
+model AdminAccessKey {
+  id             String   @id @default(cuid())
+  hashedKey      String   @unique
+  expiresAt      DateTime
+  used           Boolean  @default(false)
+  usedAt         DateTime?
+  generatedBy    String?
+  createdAt      DateTime @default(now())
+
+  @@index([expiresAt, used])
+  @@index([createdAt])
+}
+
+model AdminPassword {
+  id             String   @id @default(cuid())
+  hashedPassword String   @unique
+  expiresAt      DateTime
+  used           Boolean  @default(false)
+  usedAt         DateTime?
+  generatedBy    String?
+  createdAt      DateTime @default(now())
+
+  @@index([expiresAt, used])
+  @@index([createdAt])
+}
+
+model AdminLoginLog {
+  id        String   @id @default(cuid())
+  email     String
+  ip        String?
+  success   Boolean
+  event     String   @default("login_attempt")
+  createdAt DateTime @default(now())
+
+  @@index([email, createdAt])
+  @@index([success, createdAt])
+  @@index([event, createdAt])
+}
+
 // ----------------------
 // Inventory Alerts
 // ----------------------

@@ -137,13 +137,11 @@ By default, `npm run test:smoke` skips DB-dependent E2E checks unless `RUN_DB_E2
 ### Admin Access (Hidden Login)
 
 - Public login page (`/auth/login`) shows only Customer and Vendor options.
-- Admin login is available at a separate route: `/auth/admin-login`.
-- Set `ADMIN_LOGIN_KEY` to require a secret key for the admin login page.
-- When `ADMIN_LOGIN_KEY` is set, open admin login via one of these methods:
-   - `/auth/admin-login?k=YOUR_ADMIN_LOGIN_KEY` (first request)
-   - or header `x-admin-access-key: YOUR_ADMIN_LOGIN_KEY`
-- With query key flow, middleware sets a short-lived HttpOnly cookie and redirects to clean `/auth/admin-login` (without `k` in URL).
-- In production, if `ADMIN_LOGIN_KEY` is not set, `/auth/admin-login` is disabled and returns `404`.
+- Admin login now requires a generated dynamic route: `/admin/login/<ACCESS_KEY>`.
+- Use `/api/admin/generate-access` to create the secure login URL.
+- Use `/api/admin/generate-password` to create a one-time password.
+- Access keys and generated passwords are stored hashed, expire quickly, and are invalidated after successful use.
+- Legacy `/auth/admin-login` is disabled by middleware and redirected away.
 
 Create or update the default admin account:
 
@@ -159,10 +157,19 @@ ADMIN_DEFAULT_PASSWORD="Admin@12345!"
 ADMIN_DEFAULT_NAME="Platform Admin"
 ```
 
+Production note: `ADMIN_DEFAULT_EMAIL` must be set for hardened admin key/password generation.
+
 Optional environment variable for admin login route protection:
 
 ```env
 ADMIN_LOGIN_KEY="replace-with-strong-random-value"
+```
+
+Optional TTL controls for hardened admin auth:
+
+```env
+ADMIN_ACCESS_KEY_TTL_HOURS="24"
+ADMIN_PASSWORD_TTL_MINUTES="30"
 ```
 
 Generate strong secrets quickly:
@@ -172,6 +179,8 @@ npm run secrets:generate
 ```
 
 Use generated values for `NEXTAUTH_SECRET`, `ADMIN_LOGIN_KEY`, and (optionally) `ADMIN_DEFAULT_PASSWORD`.
+
+Detailed runbook: `docs/ADMIN_HARDENED_AUTH_GUIDE.md`.
 
 ### Daraja (M-Pesa) Sandbox Testing
 

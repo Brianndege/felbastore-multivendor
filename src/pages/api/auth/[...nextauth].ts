@@ -14,6 +14,14 @@ import { logAuthAuditEvent } from "@/lib/auth/audit";
 import { createOtpChallenge, verifyOtpChallenge } from "@/lib/auth/otp-service";
 import { sendOtpEmail } from "@/lib/email";
 import { createGoogleOnboardingToken, verifyGoogleAccessToken, verifyGoogleIdToken } from "@/lib/auth/google-oauth";
+import {
+  consumeAdminAccessKey,
+  consumeAdminPassword,
+  ensureAdminSecuritySchemaCompatibility,
+  findValidAdminAccessKey,
+  isAllowedAdminGenerator,
+  logAdminSecurityEvent,
+} from "@/lib/admin/security-auth";
 
 const providers: NextAuthOptions["providers"] = [];
 let authSchemaCompatPromise: Promise<void> | null = null;
@@ -255,6 +263,10 @@ export const authOptions: NextAuthOptions = {
           throw new Error("INVALID_LOGIN");
         }
 
+        if (credentials.userType === "admin") {
+          throw new Error("ADMIN_SECURE_LOGIN_REQUIRED");
+        }
+
         if (credentials.userType === "user" && user.role === "admin") {
           throw new Error("INVALID_LOGIN");
         }
@@ -337,6 +349,124 @@ export const authOptions: NextAuthOptions = {
           storeName: user.storeName || undefined,
           sessionVersion: user.sessionVersion || 0,
           mustChangePassword: false,
+        };
+      },
+    }),
+    CredentialsProvider({
+      id: "admin-secure",
+      name: "admin-secure",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Generated Password", type: "password" },
+        accessKey: { label: "Access Key", type: "text" },
+      },
+      async authorize(credentials, req) {
+        if (!credentials?.email || !credentials?.password || !credentials?.accessKey) {
+          throw new Error("INVALID_ADMIN_LOGIN");
+        }
+
+        await ensureAdminSecuritySchemaCompatibility();
+
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+        const ipAddress = getClientIpAddress(req?.headers?.["x-forwarded-for"] as string | undefined);
+        const userAgent = (req?.headers?.["user-agent"] as string | undefined) || "";
+        const limiterKey = `admin-secure-login:${ipAddress}:${hashIdentifier(normalizedEmail)}`;
+        const loginLimit = applyAuthRateLimit(limiterKey, { windowMs: 15 * 60 * 1000, max: 5 });
+
+        if (!loginLimit.allowed) {
+          await logAdminSecurityEvent({
+            email: normalizedEmail,
+            ip: ipAddress,
+            success: false,
+            event: "login_failure",
+          });
+          throw new Error("INVALID_ADMIN_LOGIN");
+        }
+
+        if (!isAllowedAdminGenerator(normalizedEmail)) {
+          await logAdminSecurityEvent({
+            email: normalizedEmail,
+            ip: ipAddress,
+            success: false,
+            event: "login_failure",
+          });
+          throw new Error("ADMIN_EMAIL_NOT_ALLOWED");
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { email: normalizedEmail },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            role: true,
+            sessionVersion: true,
+          },
+        });
+
+        if (!user || user.role !== "admin") {
+          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
+          throw new Error("INVALID_ADMIN_LOGIN");
+        }
+
+        const validAccess = await findValidAdminAccessKey(credentials.accessKey);
+        if (!validAccess) {
+          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
+          await logAuthAuditEvent({
+            event: "admin_secure_login",
+            status: "failure",
+            email: normalizedEmail,
+            userType: "admin",
+            ipAddress,
+            userAgent,
+            metadata: { reason: "access_key_invalid_or_expired" },
+          });
+          throw new Error("ADMIN_ACCESS_KEY_INVALID");
+        }
+
+        const consumedPassword = await consumeAdminPassword(credentials.password);
+        if (!consumedPassword) {
+          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
+          await logAuthAuditEvent({
+            event: "admin_secure_login",
+            status: "failure",
+            email: normalizedEmail,
+            userType: "admin",
+            ipAddress,
+            userAgent,
+            metadata: { reason: "one_time_password_invalid_or_expired" },
+          });
+          throw new Error("ADMIN_PASSWORD_INVALID");
+        }
+
+        const consumedAccess = await consumeAdminAccessKey(credentials.accessKey);
+        if (!consumedAccess) {
+          await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: false, event: "login_failure" });
+          throw new Error("ADMIN_ACCESS_KEY_INVALID");
+        }
+
+        await logAdminSecurityEvent({ email: normalizedEmail, ip: ipAddress, success: true, event: "login_success" });
+        await logAuthAuditEvent({
+          event: "admin_secure_login",
+          status: "success",
+          email: normalizedEmail,
+          userType: "admin",
+          ipAddress,
+          userAgent,
+          metadata: { accessKeyId: consumedAccess.id },
+        });
+
+        return {
+          id: user.id,
+          name: user.name || user.email,
+          email: user.email,
+          role: user.role,
+          sessionVersion: user.sessionVersion || 0,
+          mustChangePassword: false,
+          adminSecurityVerified: true,
+          adminAccessKeyId: consumedAccess.id,
+          adminAccessKeyExpiresAt: consumedAccess.expiresAt.toISOString(),
+          adminSessionExpiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         };
       },
     }),
@@ -445,6 +575,8 @@ export const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
+    maxAge: 60 * 60,
+    updateAge: 15 * 60,
   },
 
   callbacks: {
@@ -672,6 +804,10 @@ export const authOptions: NextAuthOptions = {
         token.storeName = user.storeName;
         token.sessionVersion = (user as any).sessionVersion || 0;
         token.mustChangePassword = (user as any).mustChangePassword || false;
+        token.adminSecurityVerified = Boolean((user as any).adminSecurityVerified);
+        token.adminAccessKeyId = (user as any).adminAccessKeyId || null;
+        token.adminAccessKeyExpiresAt = (user as any).adminAccessKeyExpiresAt || null;
+        token.adminSessionExpiresAt = (user as any).adminSessionExpiresAt || null;
       }
 
       if (token.email && (!token.role || !token.id)) {
@@ -697,6 +833,15 @@ export const authOptions: NextAuthOptions = {
         token.role = "user";
       }
 
+      if (token.role === "admin" && token.adminSessionExpiresAt) {
+        const expiry = new Date(String(token.adminSessionExpiresAt)).getTime();
+        if (!Number.isFinite(expiry) || Date.now() > expiry) {
+          token.adminSecurityVerified = false;
+          token.adminAccessKeyId = null;
+          token.adminAccessKeyExpiresAt = null;
+        }
+      }
+
       return token;
     },
 
@@ -706,6 +851,10 @@ export const authOptions: NextAuthOptions = {
         session.user.role = (token.role as string) || "user";
         session.user.storeName = (token.storeName as string | null) ?? undefined;
         session.user.mustChangePassword = Boolean(token.mustChangePassword);
+        session.user.adminSecurityVerified = Boolean(token.adminSecurityVerified);
+        session.user.adminAccessKeyId = (token.adminAccessKeyId as string | null) ?? undefined;
+        session.user.adminAccessKeyExpiresAt = (token.adminAccessKeyExpiresAt as string | null) ?? undefined;
+        session.user.adminSessionExpiresAt = (token.adminSessionExpiresAt as string | null) ?? undefined;
       }
       return session;
     },
@@ -737,7 +886,7 @@ export const authOptions: NextAuthOptions = {
       name: process.env.NODE_ENV === "production" ? "__Secure-next-auth.session-token" : "next-auth.session-token",
       options: {
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "strict",
         path: "/",
         secure: process.env.NODE_ENV === "production",
       },
@@ -746,7 +895,7 @@ export const authOptions: NextAuthOptions = {
       name: process.env.NODE_ENV === "production" ? "__Host-next-auth.csrf-token" : "next-auth.csrf-token",
       options: {
         httpOnly: true,
-        sameSite: "lax",
+        sameSite: "strict",
         path: "/",
         secure: process.env.NODE_ENV === "production",
       },
@@ -754,7 +903,7 @@ export const authOptions: NextAuthOptions = {
     callbackUrl: {
       name: process.env.NODE_ENV === "production" ? "__Secure-next-auth.callback-url" : "next-auth.callback-url",
       options: {
-        sameSite: "lax",
+        sameSite: "strict",
         path: "/",
         secure: process.env.NODE_ENV === "production",
       },

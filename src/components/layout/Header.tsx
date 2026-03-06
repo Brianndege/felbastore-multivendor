@@ -185,6 +185,9 @@ export default function Header() {
                           <Link href="/admin/dashboard">Admin Dashboard</Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
+                          <Link href="/admin/security">Admin Security</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
                           <Link href="/admin/dashboard#users">Manage Users</Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
@@ -335,11 +338,18 @@ export default function Header() {
                   </Link>
                 </li>
                 {session?.user?.role === "admin" && (
-                  <li>
-                    <Link href="/admin/dashboard" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                      Admin Dashboard
-                    </Link>
-                  </li>
+                  <>
+                    <li>
+                      <Link href="/admin/dashboard" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                        Admin Dashboard
+                      </Link>
+                    </li>
+                    <li>
+                      <Link href="/admin/security" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
+                        Admin Security
+                      </Link>
+                    </li>
+                  </>
                 )}
                 {session?.user?.role === "vendor" && (
                   <li>
