@@ -392,6 +392,7 @@ export default function CheckoutPage() {
             }))
             .filter((entry) => Boolean(entry.name))
         );
+        setCheckoutError("Address is outside one or more vendor delivery ranges.");
         toast.error("Address is outside one or more vendor delivery ranges.");
         return;
       }
@@ -671,9 +672,9 @@ export default function CheckoutPage() {
                 </Button>
               </div>
 
-              {checkoutError && paymentStage === "address" && (
+              {paymentStage === "address" && (checkoutError || blockedVendors.length > 0) && (
                 <div className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                  <p>{checkoutError}</p>
+                  <p>{checkoutError || "Address is outside one or more vendor delivery ranges."}</p>
                   {blockedVendors.length > 0 && (
                     <ul className="mt-2 list-disc pl-5">
                       {blockedVendors.map((vendor) => (
@@ -855,13 +856,31 @@ export default function CheckoutPage() {
                           </Badge>
                         ) : null}
                         {Array.isArray(vendor.availableZones) && vendor.availableZones.length > 0 && (
-                          <p className="mt-1 text-xs text-gray-600">
-                            Available ranges: {vendor.availableZones.map((zone) => `${zone.name}${typeof zone.radiusKm === "number" ? ` (${zone.radiusKm} km)` : ""}`).join(", ")}
-                          </p>
+                          <div className="mt-2">
+                            <Label htmlFor={`summary-zone-${vendor.vendorId}`} className="text-xs">Choose delivery range</Label>
+                            <select
+                              id={`summary-zone-${vendor.vendorId}`}
+                              className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+                              value={selectedVendorZones[vendor.vendorId] || ""}
+                              onChange={(event) => handleVendorZoneSelection(vendor.vendorId, event.target.value)}
+                            >
+                              <option value="">Select a range</option>
+                              {vendor.availableZones.map((zone) => (
+                                <option key={zone.id} value={zone.id}>
+                                  {zone.name}{typeof zone.radiusKm === "number" ? ` (${zone.radiusKm} km)` : ""}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                         )}
                       </li>
                     ))}
                   </ul>
+                  {blockedVendors.some((vendor) => (vendor.availableZones || []).length > 0) && (
+                    <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void runEligibilityCheck()}>
+                      Re-check With Selected Ranges
+                    </Button>
+                  )}
                 </div>
               )}
 
