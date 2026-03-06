@@ -915,7 +915,22 @@ export const authOptions: NextAuthOptions = {
 
 const nextAuthHandler = NextAuth(authOptions);
 
+function shouldRunAuthSchemaGuard(req: NextApiRequest) {
+  const raw = req.query.nextauth;
+  const parts = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  const leaf = (parts[parts.length - 1] || "").toString().toLowerCase();
+
+  // Session/log endpoints are high-frequency and do not require schema DDL checks.
+  if (leaf === "session" || leaf === "_log" || leaf === "csrf" || leaf === "providers") {
+    return false;
+  }
+
+  return true;
+}
+
 export default async function authHandler(req: NextApiRequest, res: NextApiResponse) {
-  await ensureAuthSchemaCompatibility();
+  if (shouldRunAuthSchemaGuard(req)) {
+    await ensureAuthSchemaCompatibility();
+  }
   return nextAuthHandler(req, res);
 }

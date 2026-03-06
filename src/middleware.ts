@@ -241,7 +241,11 @@ export async function middleware(request: NextRequest) {
       return preflightResponse;
     }
 
-    const isAdminBootstrapEndpoint = pathname === "/api/admin/generate-access" || pathname === "/api/admin/generate-password";
+    const isAdminBootstrapEndpoint =
+      pathname === "/api/admin/generate-access"
+      || pathname === "/api/admin/generate-password"
+      || pathname === "/api/admin/browser/generate-access-link"
+      || pathname === "/api/admin/browser/generate-password-link";
     if (pathname.startsWith("/api/admin/") && !isAdminBootstrapEndpoint) {
       const apiToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
       const adminSessionExpiry = apiToken?.adminSessionExpiresAt ? new Date(String(apiToken.adminSessionExpiresAt)).getTime() : 0;
