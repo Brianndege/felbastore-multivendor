@@ -27,7 +27,7 @@ function queryValue(value: string | string[] | undefined) {
 }
 
 function getBaseUrl(req: NextApiRequest) {
-  const configuredBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || process.env.NEXTAUTH_URL;
+  const configuredBaseUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_NEXTAUTH_URL || process.env.APP_URL || process.env.NEXTAUTH_URL;
   if (configuredBaseUrl) {
     return configuredBaseUrl;
   }
@@ -83,7 +83,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   const baseUrl = getBaseUrl(req);
   if (!baseUrl) {
-    return res.status(500).send("APP_URL or NEXT_PUBLIC_APP_URL must be configured in production");
+    return res.status(500).send("APP_URL or NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_NEXTAUTH_URL must be configured in production");
   }
 
   const { rawKey } = await createAdminAccessKey(providedEmail);

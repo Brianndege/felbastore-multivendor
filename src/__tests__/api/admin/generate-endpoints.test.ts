@@ -94,6 +94,7 @@ describe("admin generation endpoints", () => {
     process.env.ADMIN_DEFAULT_EMAIL = "admin@felbastore.local";
     process.env.APP_URL = "";
     process.env.NEXT_PUBLIC_APP_URL = "";
+    process.env.NEXT_PUBLIC_NEXTAUTH_URL = "";
     process.env.NEXTAUTH_URL = "";
 
     (enforceCsrfOrigin as jest.Mock).mockReturnValue(true);
@@ -146,6 +147,7 @@ describe("admin generation endpoints", () => {
     setNodeEnv("production");
     process.env.APP_URL = "";
     process.env.NEXT_PUBLIC_APP_URL = "";
+    process.env.NEXT_PUBLIC_NEXTAUTH_URL = "";
     process.env.NEXTAUTH_URL = "";
     (getServerSession as jest.Mock).mockResolvedValue({
       user: {
@@ -164,7 +166,7 @@ describe("admin generation endpoints", () => {
     await generateAccessHandler(req, res);
 
     expect(res.statusCode).toBe(500);
-    expect(res.payload).toEqual({ error: "APP_URL or NEXT_PUBLIC_APP_URL must be configured in production" });
+    expect(res.payload).toEqual({ error: "APP_URL or NEXT_PUBLIC_APP_URL or NEXT_PUBLIC_NEXTAUTH_URL must be configured in production" });
   });
 
   it("rejects generation when unauthorized", async () => {

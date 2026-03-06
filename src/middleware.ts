@@ -85,6 +85,7 @@ function getAllowedOrigins(request: NextRequest) {
   const appOrigins = [
     process.env.NEXTAUTH_URL,
     process.env.NEXT_PUBLIC_APP_URL,
+    process.env.NEXT_PUBLIC_NEXTAUTH_URL,
     process.env.APP_URL,
     `${request.nextUrl.protocol}//${request.headers.get("host") || ""}`,
   ].filter((origin): origin is string => Boolean(origin && origin.trim()));

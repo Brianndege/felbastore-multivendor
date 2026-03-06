@@ -30,7 +30,7 @@ function requiresVendorProfile(role: z.infer<typeof roleSchema>) {
 }
 
 function getStoreSlugUrl(slug: string) {
-  const appUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || "https://felbastore.co.ke";
+  const appUrl = process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_NEXTAUTH_URL || "https://felbastore.co.ke";
   return `${appUrl.replace(/\/$/, "")}/vendors/${slug}`;
 }
 

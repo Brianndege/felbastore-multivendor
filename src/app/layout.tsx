@@ -8,7 +8,7 @@ import Providers from "./providers";
 import { validateRuntimeEnv } from "@/lib/env";
 
 const inter = Inter({ subsets: ["latin"] });
-const siteUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL || "https://felbastore.com";
+const siteUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_NEXTAUTH_URL || process.env.APP_URL || "https://felbastore.com";
 
 validateRuntimeEnv();
 
