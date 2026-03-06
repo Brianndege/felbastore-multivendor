@@ -55,6 +55,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const { name, description, price, comparePrice, category, subcategory, tags, inventory, sku, currency } = fields;
         const readField = (field: string | string[] | undefined) =>
           Array.isArray(field) ? field[0] : field;
+        const readStringList = (field: string | string[] | undefined) =>
+          (Array.isArray(field) ? field : field ? [field] : [])
+            .map((value) => value.trim())
+            .filter(Boolean);
 
         const nameValue = readField(name) || "";
         const descriptionValue = readField(description) || "";
@@ -69,16 +73,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const requestedWorkflowStatus = normalizeVendorWorkflowStatus(readField(fields.workflowStatus));
 
         // Handle images
-        let images: string[] = [];
+        const images: string[] = readStringList(fields.existingImages);
         if (files.images) {
-          fs.mkdirSync("public/uploads", { recursive: true });
           const uploadedFiles = Array.isArray(files.images) ? files.images : [files.images];
 
           for (const file of uploadedFiles) {
-            const safeName = file.originalFilename || `${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`;
-            const uploadPath = `public/uploads/${safeName}`;
-            fs.copyFileSync(file.filepath, uploadPath);
-            images.push(`/uploads/${safeName}`);
+            if (!file?.filepath) {
+              continue;
+            }
+
+            const mimeType = file.mimetype || "image/jpeg";
+            const fileBuffer = fs.readFileSync(file.filepath);
+            images.push(`data:${mimeType};base64,${fileBuffer.toString("base64")}`);
           }
         }
 

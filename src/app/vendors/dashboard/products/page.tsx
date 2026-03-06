@@ -735,6 +735,7 @@ export default function VendorProductsPage() {
         formData.append("sku", form.sku);
         formData.append("category", form.category);
         formData.append("status", form.status);
+        formData.append("workflowStatus", "PENDING_APPROVAL");
         formData.append("tags", selectedTags.join(","));
         form.images.forEach(img => formData.append("images", img));
         form.existingImages.forEach(imgUrl => formData.append("existingImages", imgUrl));
