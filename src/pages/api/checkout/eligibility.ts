@@ -24,6 +24,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userId: session.user.id,
       address: body.address || {},
       items: Array.isArray(body.items) ? body.items : undefined,
+      selectedZoneIds: typeof body.selectedZoneIds === "object" && body.selectedZoneIds !== null ? body.selectedZoneIds : undefined,
     });
 
     return res.status(200).json(eligibility);

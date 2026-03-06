@@ -22,6 +22,13 @@ export type VendorCoverageResult = {
   reason?: string;
   zoneId?: string;
   distanceKm?: number;
+  selectedZoneId?: string;
+  availableZones?: Array<{
+    id: string;
+    name: string;
+    mode: string;
+    radiusKm?: number;
+  }>;
 };
 
 export type EligibilityPaymentOption = {
@@ -65,6 +72,7 @@ export async function evaluateCheckoutEligibility(params: {
   userId: string;
   address: EligibilityAddress;
   items?: EligibilityItem[];
+  selectedZoneIds?: Record<string, string>;
 }) {
   const requestItems = Array.isArray(params.items) ? params.items : [];
 
@@ -137,6 +145,13 @@ export async function evaluateCheckoutEligibility(params: {
       reason?: string;
       zoneId?: string;
       distanceKm?: number;
+      selectedZoneId?: string;
+      availableZones?: Array<{
+        id: string;
+        name: string;
+        mode: string;
+        radiusKm?: number;
+      }>;
     }
   >();
 
@@ -145,12 +160,31 @@ export async function evaluateCheckoutEligibility(params: {
     if (vendorCoverageMap.has(vendorId)) continue;
 
     const activeZones = product.vendor.deliveryZones || [];
+    const selectedZoneId = params.selectedZoneIds?.[vendorId];
+    const selectedZone =
+      typeof selectedZoneId === "string"
+        ? activeZones.find((zone) => zone.id === selectedZoneId)
+        : undefined;
+
+    const availableZones = activeZones.map((zone) => ({
+      id: zone.id,
+      name: zone.name,
+      mode: String(zone.mode),
+      ...(zone.radiusKm !== null ? { radiusKm: Number(zone.radiusKm) } : {}),
+    }));
+
     let eligible = false;
-    let selectedZoneId: string | undefined;
+    let matchedZoneId: string | undefined;
     let selectedDistanceKm: number | undefined;
     let reason = "OUT_OF_RANGE";
 
-    if (activeZones.length && hasAddressCoordinates) {
+    if (selectedZone) {
+      eligible = true;
+      matchedZoneId = selectedZone.id;
+      reason = "USER_SELECTED_ZONE";
+    }
+
+    if (!eligible && activeZones.length && hasAddressCoordinates) {
       for (const zone of activeZones) {
         if (
           zone.mode === "radius" &&
@@ -167,14 +201,14 @@ export async function evaluateCheckoutEligibility(params: {
 
           if (computedDistanceKm <= Number(zone.radiusKm)) {
             eligible = true;
-            selectedZoneId = zone.id;
+            matchedZoneId = zone.id;
             selectedDistanceKm = Number(computedDistanceKm.toFixed(2));
             reason = "IN_RANGE";
             break;
           }
         }
       }
-    } else {
+    } else if (!eligible) {
       const vendorCity = normalizeText(product.vendor.city || "");
       const vendorCountry = normalizeText(product.vendor.country || "");
       if (vendorCity && vendorCountry && normalizedAddressCity && normalizedAddressCountry) {
@@ -192,8 +226,10 @@ export async function evaluateCheckoutEligibility(params: {
       vendorStoreName: product.vendor.storeName,
       eligible,
       reason,
-      zoneId: selectedZoneId,
+      zoneId: matchedZoneId,
       distanceKm: selectedDistanceKm,
+      selectedZoneId: selectedZone?.id,
+      availableZones,
     });
   }
 

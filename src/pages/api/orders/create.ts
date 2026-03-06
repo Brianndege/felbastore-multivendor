@@ -33,7 +33,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const userId = session.user.id;
-  const { shippingAddress, billingAddress, paymentMethod } = req.body;
+  const { shippingAddress, billingAddress, paymentMethod, selectedZoneIds } = req.body;
   const normalizedPaymentMethod = typeof paymentMethod === "string" ? paymentMethod.toLowerCase() : "pending";
   const isPodOrder = normalizedPaymentMethod === "pod" || normalizedPaymentMethod === "pay_on_delivery";
 
@@ -50,6 +50,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lat: shippingAddress?.lat,
         lng: shippingAddress?.lng,
       },
+      selectedZoneIds: typeof selectedZoneIds === "object" && selectedZoneIds !== null ? selectedZoneIds : undefined,
     });
 
     if (!eligibility.eligible) {

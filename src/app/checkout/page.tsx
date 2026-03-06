@@ -34,6 +34,13 @@ type VendorCoverage = {
   vendorStoreName?: string;
   eligible: boolean;
   reason?: string;
+  availableZones?: Array<{
+    id: string;
+    name: string;
+    mode: string;
+    radiusKm?: number;
+  }>;
+  selectedZoneId?: string;
 };
 
 type EligibilityResponse = {
@@ -49,8 +56,15 @@ type ApiErrorPayload = {
 };
 
 type BlockedVendor = {
+  vendorId: string;
   name: string;
   reason?: string;
+  availableZones?: Array<{
+    id: string;
+    name: string;
+    mode: string;
+    radiusKm?: number;
+  }>;
 };
 
 function formatCoverageReason(reason?: string): string {
@@ -61,6 +75,7 @@ function formatCoverageReason(reason?: string): string {
     NO_ACTIVE_ZONE: "No active delivery zone",
     MISSING_COORDINATES: "Address coordinates required",
     CITY_COUNTRY_MISMATCH: "City/country not supported",
+    USER_SELECTED_ZONE: "Selected delivery zone",
   };
 
   return reasonMap[reason] || reason.replace(/_/g, " ").toLowerCase();
@@ -93,8 +108,10 @@ function extractBlockedVendors(payload: ApiErrorPayload | null | undefined): Blo
   return coverage
     .filter((entry: any) => entry && entry.eligible === false)
     .map((entry: any) => ({
+      vendorId: String(entry.vendorId || entry.vendorStoreName || entry.vendorName || "unknown"),
       name: entry.vendorStoreName || entry.vendorName || entry.vendorId,
       reason: entry.reason,
+      availableZones: Array.isArray(entry.availableZones) ? entry.availableZones : [],
     }))
     .filter((entry: BlockedVendor) => Boolean(entry.name));
 }
@@ -146,6 +163,7 @@ export default function CheckoutPage() {
   const [eligibility, setEligibility] = useState<EligibilityResponse | null>(null);
   const [checkoutError, setCheckoutError] = useState("");
   const [blockedVendors, setBlockedVendors] = useState<BlockedVendor[]>([]);
+  const [selectedVendorZones, setSelectedVendorZones] = useState<Record<string, string>>({});
 
   // Address state
   const [shippingAddress, setShippingAddress] = useState({
@@ -207,6 +225,7 @@ export default function CheckoutPage() {
             city: shippingAddress.city,
             country: shippingAddress.country,
           },
+          selectedZoneIds: selectedVendorZones,
         }),
       });
 
@@ -228,7 +247,7 @@ export default function CheckoutPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [shippingAddress.city, shippingAddress.country]);
+  }, [selectedVendorZones, shippingAddress.city, shippingAddress.country]);
 
   const createPodOrder = async () => {
     setIsLoading(true);
@@ -242,6 +261,7 @@ export default function CheckoutPage() {
           shippingAddress,
           billingAddress,
           paymentMethod: "pod",
+          selectedZoneIds: selectedVendorZones,
         }),
       });
 
@@ -317,8 +337,7 @@ export default function CheckoutPage() {
     }
   };
 
-  const handleAddressSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const runEligibilityCheck = async () => {
     setCheckoutError("");
     setBlockedVendors([]);
 
@@ -347,6 +366,7 @@ export default function CheckoutPage() {
             productId: item.product.id,
             quantity: item.quantity,
           })),
+          selectedZoneIds: selectedVendorZones,
         }),
       });
 
@@ -365,8 +385,10 @@ export default function CheckoutPage() {
           (payload.vendorCoverage || [])
             .filter((entry) => !entry.eligible)
             .map((entry) => ({
+              vendorId: String(entry.vendorId),
               name: entry.vendorStoreName || entry.vendorName || entry.vendorId,
               reason: entry.reason,
+              availableZones: Array.isArray(entry.availableZones) ? entry.availableZones : [],
             }))
             .filter((entry) => Boolean(entry.name))
         );
@@ -392,6 +414,18 @@ export default function CheckoutPage() {
 
     // Proceed to payment step
     setPaymentStage("payment");
+  };
+
+  const handleAddressSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await runEligibilityCheck();
+  };
+
+  const handleVendorZoneSelection = (vendorId: string, zoneId: string) => {
+    setSelectedVendorZones((prev) => ({
+      ...prev,
+      [vendorId]: zoneId,
+    }));
   };
 
   const handlePaymentMethodChange = (method: string) => {
@@ -650,9 +684,32 @@ export default function CheckoutPage() {
                               {formatCoverageReason(vendor.reason)}
                             </Badge>
                           ) : null}
+                          {Array.isArray(vendor.availableZones) && vendor.availableZones.length > 0 && (
+                            <div className="mt-2">
+                              <Label htmlFor={`zone-${vendor.vendorId}`} className="text-xs">Choose delivery range for this vendor</Label>
+                              <select
+                                id={`zone-${vendor.vendorId}`}
+                                className="mt-1 block w-full rounded border border-gray-300 bg-white px-2 py-1 text-xs"
+                                value={selectedVendorZones[vendor.vendorId] || ""}
+                                onChange={(event) => handleVendorZoneSelection(vendor.vendorId, event.target.value)}
+                              >
+                                <option value="">Select a range</option>
+                                {vendor.availableZones.map((zone) => (
+                                  <option key={zone.id} value={zone.id}>
+                                    {zone.name}{typeof zone.radiusKm === "number" ? ` (${zone.radiusKm} km)` : ""}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {blockedVendors.some((vendor) => (vendor.availableZones || []).length > 0) && (
+                    <Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => void runEligibilityCheck()}>
+                      Re-check With Selected Ranges
+                    </Button>
                   )}
                 </div>
               )}
@@ -797,6 +854,11 @@ export default function CheckoutPage() {
                             {formatCoverageReason(vendor.reason)}
                           </Badge>
                         ) : null}
+                        {Array.isArray(vendor.availableZones) && vendor.availableZones.length > 0 && (
+                          <p className="mt-1 text-xs text-gray-600">
+                            Available ranges: {vendor.availableZones.map((zone) => `${zone.name}${typeof zone.radiusKm === "number" ? ` (${zone.radiusKm} km)` : ""}`).join(", ")}
+                          </p>
+                        )}
                       </li>
                     ))}
                   </ul>

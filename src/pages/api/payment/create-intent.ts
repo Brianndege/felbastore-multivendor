@@ -32,6 +32,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lat: address.lat,
         lng: address.lng,
       },
+      selectedZoneIds: typeof body.selectedZoneIds === "object" && body.selectedZoneIds !== null ? body.selectedZoneIds : undefined,
     });
 
     if (!eligibility.eligible) {
