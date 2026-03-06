@@ -15,7 +15,17 @@ const nextConfig = {
     ],
   },
   compiler: {
-    removeConsole: process.env.NODE_ENV === 'production',
+    removeConsole: process.env.NODE_ENV === 'production' && !isNetlifyBuild,
+  },
+  webpack: (config, { dev }) => {
+    if (!dev) {
+      // Temporary workaround for Next 15.5.x minifier crash on this environment.
+      config.optimization = {
+        ...config.optimization,
+        minimize: false,
+      };
+    }
+    return config;
   },
   images: {
     formats: ['image/avif', 'image/webp'],
