@@ -48,6 +48,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           OR: [
             { workflowStatus: "PENDING_APPROVAL", isApproved: false },
             { status: "pending", isApproved: false },
+            {
+              workflowStatus: "DRAFT",
+              status: "inactive",
+              isApproved: false,
+              createdBy: "vendor_portal",
+            },
           ],
         },
       ];
@@ -104,6 +110,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         OR: [
           { workflowStatus: "PENDING_APPROVAL", isApproved: false },
           { status: "pending", isApproved: false },
+          {
+            workflowStatus: "DRAFT",
+            status: "inactive",
+            isApproved: false,
+            createdBy: "vendor_portal",
+          },
         ],
       },
     }),
