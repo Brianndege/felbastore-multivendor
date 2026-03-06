@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -22,14 +22,47 @@ function getAuthErrorMessage(errorCode?: string | null) {
   return AUTH_ERROR_MESSAGES[errorCode] || "Login failed. Please verify your secure access credentials.";
 }
 
-export function AdminKeyLoginForm({ accessKey }: { accessKey: string }) {
+function formatCountdown(msRemaining: number) {
+  if (msRemaining <= 0) {
+    return "Expired";
+  }
+
+  const totalSeconds = Math.floor(msRemaining / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+export function AdminKeyLoginForm({ accessKey, accessKeyExpiresAt }: { accessKey: string; accessKeyExpiresAt: string }) {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  const expiresAtTs = useMemo(() => new Date(accessKeyExpiresAt).getTime(), [accessKeyExpiresAt]);
+  const msRemaining = expiresAtTs - now;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+
+    if (msRemaining <= 0) {
+      toast.error("This admin access link has expired. Generate a new login link and password.");
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -62,6 +95,9 @@ export function AdminKeyLoginForm({ accessKey }: { accessKey: string }) {
         <div className="mb-8 text-center">
           <h1 className="text-3xl font-bold">Secure Admin Access</h1>
           <p className="text-gray-500">This login URL and generated password are one-time credentials.</p>
+          <p className="mt-2 text-sm text-gray-500">
+            Access link expires in <span className={msRemaining <= 0 ? "font-semibold text-red-600" : "font-semibold"}>{formatCountdown(msRemaining)}</span>
+          </p>
         </div>
 
         <Card>

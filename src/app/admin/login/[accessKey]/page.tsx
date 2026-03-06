@@ -12,5 +12,5 @@ export default async function AdminSecureLoginPage({ params }: { params: Promise
     redirect("/");
   }
 
-  return <AdminKeyLoginForm accessKey={accessKey} />;
+  return <AdminKeyLoginForm accessKey={accessKey} accessKeyExpiresAt={access.expiresAt.toISOString()} />;
 }
