@@ -49,7 +49,22 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx netlify deploy --build --json --debug
+        run: |
+          set -o pipefail
+          for attempt in 1 2; do
+            echo "Starting Netlify preview deploy (attempt ${attempt}/2)"
+            if npx netlify deploy --build --json --debug 2>&1 | tee netlify-preview-deploy.log; then
+              exit 0
+            fi
+            echo "Netlify preview deploy attempt ${attempt} failed"
+            tail -n 200 netlify-preview-deploy.log || true
+            if [ "$attempt" -eq 2 ]; then
+              echo "Netlify preview deploy failed after 2 attempts"
+              exit 1
+            fi
+            echo "Retrying in 10 seconds"
+            sleep 10
+          done
 
   deploy-production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
@@ -78,7 +93,22 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx netlify deploy --build --prod --json --debug
+        run: |
+          set -o pipefail
+          for attempt in 1 2; do
+            echo "Starting Netlify production deploy (attempt ${attempt}/2)"
+            if npx netlify deploy --build --prod --json --debug 2>&1 | tee netlify-production-deploy.log; then
+              exit 0
+            fi
+            echo "Netlify production deploy attempt ${attempt} failed"
+            tail -n 200 netlify-production-deploy.log || true
+            if [ "$attempt" -eq 2 ]; then
+              echo "Netlify production deploy failed after 2 attempts"
+              exit 1
+            fi
+            echo "Retrying in 10 seconds"
+            sleep 10
+          done
 
   smoke-auth-production:
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
