@@ -810,23 +810,13 @@ export const authOptions: NextAuthOptions = {
         token.adminSessionExpiresAt = (user as any).adminSessionExpiresAt || null;
       }
 
-      if (token.email && (!token.role || !token.id)) {
-        const normalizedEmail = String(token.email).trim().toLowerCase();
-        const dbUser = await prisma.user.findUnique({
-          where: { email: normalizedEmail },
-          select: {
-            id: true,
-            role: true,
-            sessionVersion: true,
-          },
-        });
+      // Keep session checks fast: do not perform DB lookups during passive JWT refreshes.
+      if (!token.id) {
+        token.id = token.sub || null;
+      }
 
-        if (dbUser) {
-          token.id = dbUser.id;
-          token.role = dbUser.role;
-          token.sessionVersion = dbUser.sessionVersion || 0;
-          token.mustChangePassword = false;
-        }
+      if (!token.role) {
+        token.role = "user";
       }
 
       if (account?.provider === "google" && !token.role) {

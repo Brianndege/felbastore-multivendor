@@ -5,6 +5,7 @@ const nextConfig = {
   distDir,
   poweredByHeader: false,
   compress: true,
+  productionBrowserSourceMaps: false,
   outputFileTracingExcludes: {
     '/*': [
       './.netlify/**/*',
