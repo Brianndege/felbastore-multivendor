@@ -5,6 +5,7 @@ import { hashSecret } from "@/lib/auth/security";
 
 export const ADMIN_ACCESS_KEY_TTL_HOURS = Number(process.env.ADMIN_ACCESS_KEY_TTL_HOURS || "24");
 export const ADMIN_PASSWORD_TTL_MINUTES = Number(process.env.ADMIN_PASSWORD_TTL_MINUTES || "30");
+export const ADMIN_LOGIN_BUNDLE_TTL_MINUTES = Number(process.env.ADMIN_LOGIN_BUNDLE_TTL_MINUTES || process.env.ADMIN_PASSWORD_TTL_MINUTES || "30");
 const ADMIN_PASSWORD_BCRYPT_ROUNDS = Number(process.env.ADMIN_PASSWORD_BCRYPT_ROUNDS || "12");
 
 export type AdminAccessKeyRecord = {
@@ -133,6 +134,29 @@ export async function createAdminPassword(generatedBy: string, ttlMinutes = ADMI
   `;
 
   return { id, rawPassword, expiresAt };
+}
+
+export async function createAdminLoginBundle(generatedBy: string, ttlMinutes = ADMIN_LOGIN_BUNDLE_TTL_MINUTES) {
+  const rawKey = generateAdminAccessKey();
+  const hashedKey = hashSecret(rawKey);
+  const rawPassword = generateAdminPassword();
+  const hashedPassword = await bcrypt.hash(rawPassword, Math.max(10, ADMIN_PASSWORD_BCRYPT_ROUNDS));
+  const expiresAt = new Date(Date.now() + Math.max(1, ttlMinutes) * 60 * 1000);
+  const accessKeyId = crypto.randomUUID();
+  const passwordId = crypto.randomUUID();
+
+  await prisma.$transaction([
+    prisma.$executeRaw`
+      INSERT INTO "AdminAccessKey" ("id", "hashedKey", "expiresAt", "used", "generatedBy", "createdAt")
+      VALUES (${accessKeyId}, ${hashedKey}, ${expiresAt}, false, ${generatedBy}, NOW())
+    `,
+    prisma.$executeRaw`
+      INSERT INTO "AdminPassword" ("id", "hashedPassword", "expiresAt", "used", "generatedBy", "createdAt")
+      VALUES (${passwordId}, ${hashedPassword}, ${expiresAt}, false, ${generatedBy}, NOW())
+    `,
+  ]);
+
+  return { accessKeyId, passwordId, rawKey, rawPassword, expiresAt };
 }
 
 export async function findValidAdminAccessKey(rawKey: string) {

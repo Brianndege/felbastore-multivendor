@@ -22,6 +22,7 @@ type AdminLogRecord = {
 };
 
 export default function AdminSecurityPage() {
+  const [isGeneratingBundle, setIsGeneratingBundle] = useState(false);
   const [isGeneratingLink, setIsGeneratingLink] = useState(false);
   const [isGeneratingPassword, setIsGeneratingPassword] = useState(false);
   const [latestLoginUrl, setLatestLoginUrl] = useState<string | null>(null);
@@ -112,6 +113,37 @@ export default function AdminSecurityPage() {
     }
   };
 
+  const generateLoginBundle = async () => {
+    setIsGeneratingBundle(true);
+    try {
+      const res = await fetch("/api/admin/generate-login-bundle", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({}),
+      });
+
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.error || "Failed to generate login bundle");
+      }
+
+      const expiresAt = payload.expiresAt || null;
+      const clipboardValue = `Login URL: ${payload.loginUrl}\nPassword: ${payload.password}\nExpires At: ${expiresAt || "unknown"}`;
+
+      setLatestLoginUrl(payload.loginUrl);
+      setLatestLoginUrlExpiresAt(expiresAt);
+      setLatestPassword(payload.password);
+      setLatestPasswordExpiresAt(expiresAt);
+      await navigator.clipboard.writeText(clipboardValue);
+      toast.success("Admin login URL and password generated with a shared expiry and copied.");
+      await loadData();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to generate login bundle");
+    } finally {
+      setIsGeneratingBundle(false);
+    }
+  };
+
   const generatePassword = async () => {
     setIsGeneratingPassword(true);
     try {
@@ -169,9 +201,12 @@ export default function AdminSecurityPage() {
         <Card>
           <CardHeader>
             <CardTitle>Generate Login Link</CardTitle>
-            <CardDescription>Create a secure `/admin/login/&lt;key&gt;` URL.</CardDescription>
+            <CardDescription>Create a secure `/admin/login/&lt;key&gt;` URL, or generate URL + password together.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
+            <Button onClick={() => void generateLoginBundle()} disabled={isGeneratingBundle}>
+              {isGeneratingBundle ? "Generating bundle..." : "Generate Login + Password"}
+            </Button>
             <Button onClick={() => void generateLoginLink()} disabled={isGeneratingLink}>
               {isGeneratingLink ? "Generating..." : "Generate Login Link"}
             </Button>

@@ -140,6 +140,7 @@ By default, `npm run test:smoke` skips DB-dependent E2E checks unless `RUN_DB_E2
 - Admin login now requires a generated dynamic route: `/admin/login/<ACCESS_KEY>`.
 - Use `/api/admin/generate-access` to create the secure login URL.
 - Use `/api/admin/generate-password` to create a one-time password.
+- Use `/api/admin/generate-login-bundle` to generate URL + password together with a shared expiry.
 - Access keys and generated passwords are stored hashed, expire quickly, and are invalidated after successful use.
 - Legacy `/auth/admin-login` is disabled by middleware and redirected away.
 
@@ -171,6 +172,7 @@ Optional TTL controls for hardened admin auth:
 ```env
 ADMIN_ACCESS_KEY_TTL_HOURS="24"
 ADMIN_PASSWORD_TTL_MINUTES="30"
+ADMIN_LOGIN_BUNDLE_TTL_MINUTES="30"
 ```
 
 Recommended profiles:

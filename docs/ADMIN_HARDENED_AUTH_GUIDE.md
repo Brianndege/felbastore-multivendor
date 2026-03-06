@@ -17,8 +17,8 @@ Use one of these methods.
 ### Method A: From an active hardened admin session
 
 1. Open `/admin/security`
-2. Click `Generate Login Link`
-3. A one-time URL is generated and copied
+2. Click `Generate Login + Password`
+3. A one-time URL and one-time password are generated together with a shared expiry
 
 ### Method B: Bootstrap (first-time / no session)
 
@@ -42,6 +42,20 @@ Response:
 ```json
 {
   "loginUrl": "https://your-domain/admin/login/<ACCESS_KEY>",
+  "expiresAt": "2026-03-06T10:00:00.000Z"
+}
+```
+
+### Method C: Bootstrap bundle (single call)
+
+`GET /api/admin/browser/generate-login-bundle?k=<ADMIN_LOGIN_KEY>&email=<ADMIN_DEFAULT_EMAIL>`
+
+Response:
+
+```json
+{
+  "loginUrl": "https://your-domain/admin/login/<ACCESS_KEY>",
+  "password": "A9#d82!3kd@29fj",
   "expiresAt": "2026-03-06T10:00:00.000Z"
 }
 ```
@@ -73,6 +87,7 @@ Response:
 ```
 
 Passwords are one-time and invalidated immediately after successful use.
+Bundle-generated login URL and password use the same expiry timestamp.
 
 ## 3. Login Procedure
 
