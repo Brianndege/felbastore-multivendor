@@ -70,15 +70,8 @@ export default function Header() {
 
   useEffect(() => {
     if (!isMobileMenuOpen) {
-      document.body.style.overflow = "";
       setIsMobileCategoriesOpen(false);
-      return;
     }
-
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = "";
-    };
   }, [isMobileMenuOpen]);
 
   useEffect(() => {
@@ -204,7 +197,7 @@ export default function Header() {
 
   return (
     <header
-      className={`sticky inset-x-0 top-0 z-50 border-b border-orange-100 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 ${
+      className={`relative sticky inset-x-0 top-0 z-50 border-b border-orange-100 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 ${
         hasScrolled ? "shadow-[0_6px_18px_-10px_rgba(15,23,42,0.4)]" : ""
       }`}
     >
@@ -546,8 +539,8 @@ export default function Header() {
         </div>
 
         <div
-          className={`fixed inset-0 z-[60] transition-opacity duration-300 md:hidden ${
-            isMobileMenuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+          className={`absolute left-0 top-full z-[100] w-full transition-all duration-300 md:hidden ${
+            isMobileMenuOpen ? "pointer-events-auto visible opacity-100" : "pointer-events-none invisible opacity-0"
           }`}
           aria-hidden={!isMobileMenuOpen}
         >
@@ -555,8 +548,8 @@ export default function Header() {
             id="mobile-navigation"
             role="navigation"
             aria-label="Mobile navigation"
-            className={`h-full w-full overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
-              isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
+            className={`w-full border-t border-orange-100 bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
+              isMobileMenuOpen ? "translate-y-0" : "-translate-y-2"
             }`}
           >
             <div className="mb-4 flex items-center justify-between border-b border-orange-100 pb-3">
