@@ -179,7 +179,7 @@ export default function OtpLoginPage() {
           return;
         }
 
-        toast.error(`Verification failed (${result.error}). Request a new code and try again.`);
+        toast.error("Verification failed. Request a new code and try again.");
         return;
       }
 

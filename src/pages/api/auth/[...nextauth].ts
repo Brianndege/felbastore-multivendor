@@ -53,6 +53,9 @@ function ensureAuthSchemaCompatibility() {
       await prisma.$executeRawUnsafe(
         'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "image" TEXT'
       );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Vendor" ADD COLUMN IF NOT EXISTS "featured" BOOLEAN NOT NULL DEFAULT false'
+      );
 
       await prisma.$executeRawUnsafe(
         'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "access_token" TEXT'
@@ -355,9 +358,17 @@ export const authOptions: NextAuthOptions = {
         });
 
         if (credentials.userType === "user") {
-          await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
+          try {
+            await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
+          } catch (error) {
+            logger.warn("[NextAuth] Failed to update user lastLoginAt", error);
+          }
         } else if (credentials.userType === "vendor") {
-          await prisma.vendor.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+          try {
+            await prisma.vendor.update({ where: { id: user.id }, data: { lastLoginAt: new Date() } });
+          } catch (error) {
+            logger.warn("[NextAuth] Failed to update vendor lastLoginAt", error);
+          }
         }
 
         return {
@@ -602,9 +613,17 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (credentials.userType === "user") {
-          await prisma.user.update({ where: { id: account.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
+          try {
+            await prisma.user.update({ where: { id: account.id }, data: { lastLoginAt: new Date() }, select: { id: true } });
+          } catch (error) {
+            logger.warn("[NextAuth] Failed to update user lastLoginAt after OTP", error);
+          }
         } else {
-          await prisma.vendor.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } });
+          try {
+            await prisma.vendor.update({ where: { id: account.id }, data: { lastLoginAt: new Date() } });
+          } catch (error) {
+            logger.warn("[NextAuth] Failed to update vendor lastLoginAt after OTP", error);
+          }
         }
 
         await logAuthAuditEvent({
