@@ -42,6 +42,28 @@ enum ProductWorkflowStatus {
   REJECTED
 }
 
+enum OrderLifecycleStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
+enum ShippingLifecycleStatus {
+  PENDING
+  LABEL_CREATED
+  SHIPPED
+  IN_TRANSIT
+  OUT_FOR_DELIVERY
+  DELIVERED
+  EXCEPTION
+}
+
 enum AffiliateNetwork {
   AMAZON_ASSOCIATES
   CJ_AFFILIATE
@@ -129,6 +151,7 @@ model User {
   wishlistItems     WishlistItem[]
   addresses         SavedAddress[]
   notifications     Notification[]
+  orderMessages     OrderConversationMessage[]
   analytics         UserAnalytics[]
   otpChallenges     EmailOtpChallenge[]
 }
@@ -151,6 +174,7 @@ model Vendor {
   country       String?
   zipCode       String?
   description   String?  @db.Text
+  featured      Boolean  @default(false)
   businessType  String?
   taxId         String?
   website       String?
@@ -171,6 +195,8 @@ model Vendor {
   inventoryAlerts   InventoryAlert[]
   deliveryZones     VendorDeliveryZone[]
   paymentMethods    VendorPaymentMethod[]
+  orderFulfillments OrderVendorFulfillment[]
+  orderMessages     OrderConversationMessage[]
   otpChallenges     EmailOtpChallenge[]
 }
 
@@ -298,10 +324,87 @@ model Order {
 
   user       User        @relation(fields: [userId], references: [id])
   orderItems OrderItem[]
+  vendorFulfillments OrderVendorFulfillment[]
+  statusAudits OrderStatusAudit[]
+  messages OrderConversationMessage[]
 
   @@index([userId])
   @@index([status])
   @@index([orderNumber])
+}
+
+model OrderConversationMessage {
+  id           String   @id @default(cuid())
+  orderId      String
+  vendorId     String
+  customerId   String
+  senderRole   String
+  senderId     String
+  message      String   @db.Text
+  createdAt    DateTime @default(now())
+
+  order    Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor   Vendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  customer User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, vendorId, createdAt])
+  @@index([customerId, createdAt])
+  @@index([vendorId, createdAt])
+}
+
+model OrderVendorFulfillment {
+  id                String                 @id @default(cuid())
+  orderId           String
+  vendorId          String
+  orderStatus       OrderLifecycleStatus   @default(PENDING)
+  shippingStatus    ShippingLifecycleStatus @default(PENDING)
+  trackingNumber    String?
+  shippingProvider  String?
+  trackingUrl       String?
+  estimatedDeliveryAt DateTime?
+  confirmationDueAt DateTime?
+  acknowledgedAt    DateTime?
+  confirmedAt       DateTime?
+  processingAt      DateTime?
+  shippedAt         DateTime?
+  inTransitAt       DateTime?
+  deliveredAt       DateTime?
+  completedAt       DateTime?
+  cancelledAt       DateTime?
+  refundedAt        DateTime?
+  payoutReleasedAt  DateTime?
+  payoutFrozenAt    DateTime?
+  payoutFreezeReason String?
+  disputeOpenedAt   DateTime?
+  disputeResolvedAt DateTime?
+  disputeReason     String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor Vendor @relation(fields: [vendorId], references: [id])
+
+  @@unique([orderId, vendorId])
+  @@index([vendorId, orderStatus])
+  @@index([orderId, orderStatus])
+}
+
+model OrderStatusAudit {
+  id            String               @id @default(cuid())
+  orderId       String
+  vendorId      String?
+  fromStatus    OrderLifecycleStatus?
+  toStatus      OrderLifecycleStatus
+  actorRole     String
+  actorId       String?
+  note          String?
+  metadata      String?              @db.Text
+  createdAt     DateTime             @default(now())
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([vendorId, createdAt])
 }
 
 model OrderItem {
