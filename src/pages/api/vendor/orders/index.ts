@@ -37,6 +37,30 @@ function logPrismaError(context: string, error: unknown, extra?: Record<string, 
   });
 }
 
+function logDeepError(context: string, error: unknown, extra?: Record<string, unknown>) {
+  console.error(`[${context}] Deep error context`, extra || {});
+  console.dir(error, { depth: null });
+}
+
+function normalizeStatusFilter(input: string): string {
+  const normalized = input.trim().toLowerCase();
+  if (!normalized || normalized === "all") return "";
+
+  const allowed = new Set([
+    "pending",
+    "confirmed",
+    "processing",
+    "shipped",
+    "in_transit",
+    "delivered",
+    "completed",
+    "cancelled",
+    "refunded",
+  ]);
+
+  return allowed.has(normalized) ? normalized : "";
+}
+
 async function fetchOrdersWithFallback(vendorId: string) {
   try {
     return await prismaUnsafe.order.findMany({
@@ -162,7 +186,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
   }
 
-  const requestedStatus = typeof req.query.status === "string" ? req.query.status.trim().toLowerCase() : "";
+  const requestedStatus = typeof req.query.status === "string" ? normalizeStatusFilter(req.query.status) : "";
 
   try {
     const orders = await fetchOrdersWithFallback(vendorId);
@@ -269,6 +293,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     logPrismaError("vendor/orders", error, {
       vendorId,
       requestedStatus,
+    });
+    logDeepError("vendor/orders", error, {
+      vendorId,
+      requestedStatus,
+      vendorIdType: typeof vendorId,
     });
     return res.status(500).json({
       error: "Failed to fetch vendor orders",

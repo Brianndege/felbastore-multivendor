@@ -18,6 +18,10 @@ export const prisma =
   });
 
 if (!globalForPrisma.prisma) {
+  globalForPrisma.prisma = prisma;
+}
+
+if (!globalForPrisma.prisma) {
   logger.info('[Prisma] Client initialized (lazy connection mode)');
 
   const databaseUrl = process.env.DATABASE_URL || '';
@@ -26,6 +30,4 @@ if (!globalForPrisma.prisma) {
   }
 }
 
-if (process.env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma;
-}
+// Keep explicit global assignment for singleton behavior in dev and serverful production contexts.

@@ -69,6 +69,11 @@ function logPrismaError(context: string, error: unknown, extra?: Record<string, 
   });
 }
 
+function logDeepError(context: string, error: unknown, extra?: Record<string, unknown>) {
+  console.error(`[${context}] Deep error context`, extra || {});
+  console.dir(error, { depth: null });
+}
+
 function normalizePaymentMethodToCode(method: string): string {
   const normalized = method.toLowerCase();
 
@@ -302,6 +307,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       if (!item.product.vendorId) {
         throw new Error(`MISSING_PRODUCT_VENDOR:${item.product.id}`);
       }
+      if (item.product.vendor && item.product.vendor.id !== item.product.vendorId) {
+        throw new Error(`VENDOR_PRODUCT_RELATION_MISMATCH:${item.product.id}`);
+      }
       if (item.product.inventory < item.quantity) {
         throw new Error(`INSUFFICIENT_INVENTORY:${item.product.id}`);
       }
@@ -409,6 +417,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
 
       return createdOrder;
+    }, {
+      maxWait: 5000,
+      timeout: 10000,
     });
 
     await runPostOrderSideEffects({
@@ -446,6 +457,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+    if (message.startsWith("VENDOR_PRODUCT_RELATION_MISMATCH:")) {
+      return res.status(409).json({
+        error: "Cart contains a product with inconsistent vendor relation. Please refresh cart and retry.",
+        code: "VENDOR_PRODUCT_RELATION_MISMATCH",
+      });
+    }
+
     if (message.startsWith("INVALID_PRODUCT_PRICE:")) {
       return res.status(400).json({
         error: "Cart contains products with invalid pricing",
@@ -467,6 +485,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           code: "STALE_CART_RELATION",
         });
       }
+
+      if (error.code === "P2024") {
+        return res.status(503).json({
+          error: "Order service is temporarily busy. Please retry in a moment.",
+          code: "DB_POOL_TIMEOUT",
+        });
+      }
+
+      if (error.code === "P2034") {
+        return res.status(503).json({
+          error: "Order transaction conflict detected. Please retry checkout.",
+          code: "DB_TRANSACTION_CONFLICT",
+        });
+      }
     }
 
     logPrismaError("orders/create", error, {
@@ -474,6 +506,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       paymentMethod: normalizedPaymentMethod,
       hasShippingAddress: Boolean(shippingAddress),
       hasBillingAddress: Boolean(billingAddress),
+    });
+    logDeepError("orders/create", error, {
+      userId,
+      paymentMethod: normalizedPaymentMethod,
+      selectedZoneIdsType: typeof selectedZoneIds,
     });
     return res.status(500).json({ error: "Internal server error" });
   }
