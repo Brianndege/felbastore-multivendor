@@ -216,7 +216,7 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       allowDangerousEmailAccountLinking: true,
       authorization: {
         params: {
-          scope: "openid email profile",
+          scope: "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
           prompt: "select_account consent",
           access_type: "offline",
           include_granted_scopes: "true",
@@ -225,6 +225,25 @@ if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
       },
     })
   );
+}
+
+async function ensureVendorRoleIntegrity(input: { role?: string | null; email?: string | null }) {
+  const normalizedRole = (input.role || "").toLowerCase();
+  if (normalizedRole !== "vendor" && normalizedRole !== "both") {
+    return true;
+  }
+
+  const normalizedEmail = (input.email || "").trim().toLowerCase();
+  if (!normalizedEmail) {
+    return false;
+  }
+
+  const vendor = await prisma.vendor.findUnique({
+    where: { email: normalizedEmail },
+    select: { id: true, isActive: true },
+  });
+
+  return Boolean(vendor?.id && vendor?.isActive);
 }
 
 if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
@@ -690,8 +709,27 @@ export const authOptions: NextAuthOptions = {
 
   callbacks: {
     async signIn({ user, account }) {
-      if (!account || !user?.email) {
+      if (!account) {
         return true;
+      }
+
+      const callbackDestination = account?.callbackUrl && typeof account.callbackUrl === "string"
+        ? account.callbackUrl
+        : "";
+      const wantsVendorDashboard = callbackDestination.includes("/vendors/dashboard");
+
+      if (!user?.email) {
+        await logAuthAuditEventSafe({
+          event: "oauth_login",
+          status: "failure",
+          email: "",
+          userType: "user",
+          metadata: {
+            provider: account.provider,
+            reason: "missing_email",
+          },
+        });
+        return "/auth/login?error=OAuthCallback";
       }
 
       if (account.provider === "google") {
@@ -740,6 +778,28 @@ export const authOptions: NextAuthOptions = {
           });
 
           if (linkedGoogleAccount?.user) {
+            const vendorIntegrityOk = await ensureVendorRoleIntegrity({
+              role: linkedGoogleAccount.user.role,
+              email: normalizedEmail,
+            });
+            if (!vendorIntegrityOk) {
+              await logAuthAuditEventSafe({
+                event: "oauth_login",
+                status: "blocked",
+                email: normalizedEmail,
+                userType: "vendor",
+                metadata: {
+                  provider: "google",
+                  reason: "vendor_role_integrity_failed",
+                },
+              });
+              return "/auth/login?error=unauthorized";
+            }
+
+            if (wantsVendorDashboard && linkedGoogleAccount.user.role !== "vendor" && linkedGoogleAccount.user.role !== "both") {
+              return "/auth/login?error=unauthorized";
+            }
+
             await prisma.user.update({
               where: { id: linkedGoogleAccount.user.id },
               data: {
@@ -791,6 +851,28 @@ export const authOptions: NextAuthOptions = {
                 },
               });
               return "/auth/login?error=OAuthAccountNotLinked";
+            }
+
+            const vendorIntegrityOk = await ensureVendorRoleIntegrity({
+              role: existingUser.role,
+              email: normalizedEmail,
+            });
+            if (!vendorIntegrityOk) {
+              await logAuthAuditEventSafe({
+                event: "oauth_login",
+                status: "blocked",
+                email: normalizedEmail,
+                userType: "vendor",
+                metadata: {
+                  provider: "google",
+                  reason: "vendor_role_integrity_failed",
+                },
+              });
+              return "/auth/login?error=unauthorized";
+            }
+
+            if (wantsVendorDashboard && existingUser.role !== "vendor" && existingUser.role !== "both") {
+              return "/auth/login?error=unauthorized";
             }
 
             await prisma.user.update({
