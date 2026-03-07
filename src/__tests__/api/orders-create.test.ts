@@ -32,9 +32,13 @@ jest.mock("@/lib/outbox", () => ({
 
 jest.mock("@/lib/prisma", () => ({
   prisma: {
+    $transaction: jest.fn(),
     cartItem: {
       findMany: jest.fn(),
       deleteMany: jest.fn(),
+    },
+    product: {
+      updateMany: jest.fn(),
     },
     order: {
       create: jest.fn(),
@@ -113,6 +117,17 @@ describe("orders/create API", () => {
     (prismaMock.orderStatusAudit.createMany as jest.Mock).mockResolvedValue({ count: 1 });
     (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
     (prismaMock.vendor.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.product.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (prismaMock.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<unknown>) => {
+      const tx = {
+        product: prismaMock.product,
+        order: prismaMock.order,
+        cartItem: prismaMock.cartItem,
+        orderVendorFulfillment: prismaMock.orderVendorFulfillment,
+        orderStatusAudit: prismaMock.orderStatusAudit,
+      };
+      return callback(tx);
+    });
   });
 
   it("returns 401 for unauthenticated users", async () => {

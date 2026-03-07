@@ -136,105 +136,116 @@ async function runPostOrderSideEffects(input: {
 }) {
   const { order, userId, uniqueVendorIds, normalizedPaymentMethod } = input;
 
-  const notificationWrites = [
-    prisma.notification.create({
-      data: {
-        userId,
-        type: "order",
-        title: "Order Placed - Waiting for Vendor Confirmation",
-        message: `Your order #${order.orderNumber} has been placed and is pending vendor confirmation.`,
-        data: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber }),
-      },
-    }),
-    ...uniqueVendorIds.map((vendorId) => {
-      const vendorLineItems = order.orderItems.filter((item) => item.vendorId === vendorId);
-      const lineItemCount = vendorLineItems.reduce((sum, item) => sum + item.quantity, 0);
-
-      return prisma.notification.create({
+  try {
+    const notificationWrites = [
+      prisma.notification.create({
         data: {
-          vendorId,
+          userId,
           type: "order",
-          title: "New Pending Order",
-          message: `Order #${order.orderNumber} includes ${lineItemCount} item(s) for your store and needs confirmation.`,
-          data: JSON.stringify({
-            orderId: order.id,
-            orderNumber: order.orderNumber,
-            itemCount: lineItemCount,
-          }),
+          title: "Order Placed - Waiting for Vendor Confirmation",
+          message: `Your order #${order.orderNumber} has been placed and is pending vendor confirmation.`,
+          data: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber }),
         },
-      });
-    }),
-  ];
+      }),
+      ...uniqueVendorIds.map((vendorId) => {
+        const vendorLineItems = order.orderItems.filter((item) => item.vendorId === vendorId);
+        const lineItemCount = vendorLineItems.reduce((sum, item) => sum + item.quantity, 0);
 
-  const sideEffectTasks: Array<Promise<unknown>> = [
-    Promise.all(notificationWrites),
-    enqueueOutboxEvent({
-      topic: "order.created",
-      entityType: "order",
-      entityId: order.id,
-      payload: {
+        return prisma.notification.create({
+          data: {
+            vendorId,
+            type: "order",
+            title: "New Pending Order",
+            message: `Order #${order.orderNumber} includes ${lineItemCount} item(s) for your store and needs confirmation.`,
+            data: JSON.stringify({
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              itemCount: lineItemCount,
+            }),
+          },
+        });
+      }),
+    ];
+
+    const sideEffectTasks: Array<Promise<unknown>> = [
+      Promise.all(notificationWrites),
+      enqueueOutboxEvent({
+        topic: "order.created",
+        entityType: "order",
+        entityId: order.id,
+        payload: {
+          orderId: order.id,
+          orderNumber: order.orderNumber,
+          userId,
+          totalAmount: Number(order.totalAmount),
+          paymentMethod: normalizedPaymentMethod,
+          createdAt: order.createdAt.toISOString(),
+        },
+      }),
+    ];
+
+    const userRecordPromise = prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+
+    const vendorsPromise = prisma.vendor.findMany({
+      where: { id: { in: uniqueVendorIds } },
+      select: { id: true, email: true, storeName: true },
+    });
+
+    const [userRecord, vendors] = await Promise.all([userRecordPromise, vendorsPromise]);
+
+    if (userRecord?.email) {
+      sideEffectTasks.push(
+        sendOrderCreatedEmailToUser({
+          email: userRecord.email,
+          customerName: userRecord.name || undefined,
+          orderNumber: order.orderNumber,
+          amountLabel: formatCurrency(Number(order.totalAmount), order.orderItems[0]?.product?.currency || "KES"),
+        })
+      );
+    }
+
+    sideEffectTasks.push(
+      Promise.all(
+        vendors.map((vendor) => {
+          const lineItems = order.orderItems.filter((item) => item.vendorId === vendor.id);
+          const itemSummary = lineItems.map((item) => `${item.quantity}x ${item.productName}`).join(", ");
+
+          return sendOrderCreatedEmailToVendor({
+            email: vendor.email,
+            storeName: vendor.storeName,
+            orderNumber: order.orderNumber,
+            itemSummary,
+          });
+        })
+      )
+    );
+
+    const sideEffects = await Promise.allSettled(sideEffectTasks);
+    const failedSideEffects = sideEffects.filter((result) => result.status === "rejected") as PromiseRejectedResult[];
+
+    if (failedSideEffects.length > 0) {
+      console.error("[orders/create] Post-order side effects failed", {
         orderId: order.id,
         orderNumber: order.orderNumber,
-        userId,
-        totalAmount: Number(order.totalAmount),
-        paymentMethod: normalizedPaymentMethod,
-        createdAt: order.createdAt.toISOString(),
-      },
-    }),
-  ];
-
-  const userRecordPromise = prisma.user.findUnique({
-    where: { id: userId },
-    select: { email: true, name: true },
-  });
-
-  const vendorsPromise = prisma.vendor.findMany({
-    where: { id: { in: uniqueVendorIds } },
-    select: { id: true, email: true, storeName: true },
-  });
-
-  const [userRecord, vendors] = await Promise.all([userRecordPromise, vendorsPromise]);
-
-  if (userRecord?.email) {
-    sideEffectTasks.push(
-      sendOrderCreatedEmailToUser({
-        email: userRecord.email,
-        customerName: userRecord.name || undefined,
-        orderNumber: order.orderNumber,
-        amountLabel: formatCurrency(Number(order.totalAmount), order.orderItems[0]?.product?.currency || "KES"),
-      })
-    );
-  }
-
-  sideEffectTasks.push(
-    Promise.all(
-      vendors.map((vendor) => {
-        const lineItems = order.orderItems.filter((item) => item.vendorId === vendor.id);
-        const itemSummary = lineItems.map((item) => `${item.quantity}x ${item.productName}`).join(", ");
-
-        return sendOrderCreatedEmailToVendor({
-          email: vendor.email,
-          storeName: vendor.storeName,
-          orderNumber: order.orderNumber,
-          itemSummary,
-        });
-      })
-    )
-  );
-
-  const sideEffects = await Promise.allSettled(sideEffectTasks);
-  const failedSideEffects = sideEffects.filter((result) => result.status === "rejected") as PromiseRejectedResult[];
-
-  if (failedSideEffects.length > 0) {
-    console.error("[orders/create] Post-order side effects failed", {
+        failedCount: failedSideEffects.length,
+        reasons: failedSideEffects.map((entry) =>
+          entry.reason instanceof Error
+            ? { message: entry.reason.message, stack: entry.reason.stack }
+            : { reason: entry.reason }
+        ),
+      });
+    }
+  } catch (sideEffectError) {
+    console.error("[orders/create] Post-order side effects crashed", {
       orderId: order.id,
       orderNumber: order.orderNumber,
-      failedCount: failedSideEffects.length,
-      reasons: failedSideEffects.map((entry) =>
-        entry.reason instanceof Error
-          ? { message: entry.reason.message, stack: entry.reason.stack }
-          : { reason: entry.reason }
-      ),
+      error:
+        sideEffectError instanceof Error
+          ? { name: sideEffectError.name, message: sideEffectError.message, stack: sideEffectError.stack }
+          : sideEffectError,
     });
   }
 }
