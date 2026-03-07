@@ -92,7 +92,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       new Set<string>(
         orders
           .map((order: any): string | null => (typeof order?.userId === "string" ? order.userId : null))
-          .filter((id): id is string => typeof id === "string" && id.length > 0)
+          .filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
       )
     );
 
