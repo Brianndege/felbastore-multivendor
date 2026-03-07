@@ -83,42 +83,22 @@ const parseJson = async (response) => {
   }
 };
 
-const ensureTestProduct = async () => {
-  let product = await prisma.product.findFirst({
-    where: {
-      status: 'active',
-      isApproved: true,
-      inventory: { gt: 0 },
+const setupEligibleCardCheckoutContext = async () => {
+  const vendor = await prisma.vendor.create({
+    data: {
+      name: 'E2E Vendor',
+      email: `e2e-vendor-${Date.now()}@felba.test`,
+      storeName: 'E2E Test Store',
+      role: 'vendor',
+      city: 'Nairobi',
+      country: 'Kenya',
+      isVerified: true,
+      isActive: true,
     },
     select: { id: true },
   });
 
-  if (product) {
-    return {
-      productId: product.id,
-      createdProductId: null,
-      createdVendorId: null,
-    };
-  }
-
-  let createdVendorId = null;
-
-  let vendor = await prisma.vendor.findFirst({ select: { id: true } });
-
-  if (!vendor) {
-    vendor = await prisma.vendor.create({
-      data: {
-        name: 'E2E Vendor',
-        email: `e2e-vendor-${Date.now()}@felba.test`,
-        storeName: 'E2E Test Store',
-        role: 'vendor',
-      },
-      select: { id: true },
-    });
-    createdVendorId = vendor.id;
-  }
-
-  const created = await prisma.product.create({
+  const product = await prisma.product.create({
     data: {
       vendorId: vendor.id,
       name: 'E2E Card Test Product',
@@ -131,14 +111,48 @@ const ensureTestProduct = async () => {
       inventory: 10,
       status: 'active',
       isApproved: true,
+      workflowStatus: 'APPROVED',
     },
     select: { id: true },
   });
 
+  const deliveryZone = await prisma.vendorDeliveryZone.create({
+    data: {
+      vendorId: vendor.id,
+      name: 'E2E Nairobi Zone',
+      mode: 'radius',
+      centerLat: -1.286389,
+      centerLng: 36.817223,
+      radiusKm: 50,
+      isActive: true,
+    },
+    select: { id: true },
+  });
+
+  const vendorPaymentMethod = await prisma.vendorPaymentMethod.create({
+    data: {
+      vendorId: vendor.id,
+      methodKind: 'CARD',
+      label: 'Card',
+      approvalStatus: 'approved',
+      isActive: true,
+      approvedAt: new Date(),
+    },
+    select: { id: true },
+  });
+
+  await prisma.productPaymentMethod.create({
+    data: {
+      productId: product.id,
+      vendorPaymentMethodId: vendorPaymentMethod.id,
+    },
+  });
+
   return {
-    productId: created.id,
-    createdProductId: created.id,
-    createdVendorId,
+    productId: product.id,
+    vendorId: vendor.id,
+    deliveryZoneId: deliveryZone.id,
+    vendorPaymentMethodId: vendorPaymentMethod.id,
   };
 };
 
@@ -149,6 +163,8 @@ const ensureTestProduct = async () => {
   let createdOrderId = null;
   let createdProductId = null;
   let createdVendorId = null;
+  let createdDeliveryZoneId = null;
+  let createdVendorPaymentMethodId = null;
 
   const cleanup = async () => {
     if (createdOrderId) {
@@ -166,7 +182,16 @@ const ensureTestProduct = async () => {
     }
 
     if (createdProductId) {
+      await prisma.productPaymentMethod.deleteMany({ where: { productId: createdProductId } });
       await prisma.product.deleteMany({ where: { id: createdProductId } });
+    }
+
+    if (createdVendorPaymentMethodId) {
+      await prisma.vendorPaymentMethod.deleteMany({ where: { id: createdVendorPaymentMethodId } });
+    }
+
+    if (createdDeliveryZoneId) {
+      await prisma.vendorDeliveryZone.deleteMany({ where: { id: createdDeliveryZoneId } });
     }
 
     if (createdVendorId) {
@@ -188,15 +213,18 @@ const ensureTestProduct = async () => {
         email: testEmail,
         password: passwordHash,
         role: 'user',
+        emailVerified: new Date(),
       },
       select: { id: true, email: true },
     });
     createdUserId = user.id;
 
-    const productContext = await ensureTestProduct();
-    const productId = productContext.productId;
-    createdProductId = productContext.createdProductId;
-    createdVendorId = productContext.createdVendorId;
+    const checkoutContext = await setupEligibleCardCheckoutContext();
+    const productId = checkoutContext.productId;
+    createdProductId = checkoutContext.productId;
+    createdVendorId = checkoutContext.vendorId;
+    createdDeliveryZoneId = checkoutContext.deliveryZoneId;
+    createdVendorPaymentMethodId = checkoutContext.vendorPaymentMethodId;
 
     const csrfRes = await request(`${baseUrl}/api/auth/csrf`);
     if (!csrfRes.ok) throw new Error(`CSRF request failed: ${csrfRes.status}`);
@@ -255,9 +283,11 @@ const ensureTestProduct = async () => {
       phone: '0700000000',
       address: 'Nairobi Road',
       city: 'Nairobi',
+      lat: -1.286389,
+      lng: 36.817223,
       state: 'Nairobi',
       zipCode: '00100',
-      country: 'KE',
+      country: 'Kenya',
     };
 
     const createOrderRes = await request(`${baseUrl}/api/orders/create`, {

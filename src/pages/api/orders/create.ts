@@ -74,6 +74,90 @@ function logDeepError(context: string, error: unknown, extra?: Record<string, un
   console.dir(error, { depth: null });
 }
 
+function isMissingWorkflowTableError(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return error.code === "P2021" || error.code === "P2022";
+  }
+
+  if (error instanceof Prisma.PrismaClientUnknownRequestError || error instanceof Error) {
+    const message = error.message || "";
+    return /does not exist|relation .* does not exist|column .* does not exist/i.test(message);
+  }
+
+  return false;
+}
+
+async function runOptionalOrderWorkflowWrites(input: {
+  orderId: string;
+  userId: string;
+  uniqueVendorIds: string[];
+  confirmationDueAt: Date;
+}) {
+  const { orderId, userId, uniqueVendorIds, confirmationDueAt } = input;
+
+  if (!uniqueVendorIds.length) {
+    return;
+  }
+
+  try {
+    await prisma.orderVendorFulfillment.createMany({
+      data: uniqueVendorIds.map((vendorId) => ({
+        orderId,
+        vendorId,
+        orderStatus: "PENDING",
+        shippingStatus: "PENDING",
+        confirmationDueAt,
+      })),
+      skipDuplicates: true,
+    });
+  } catch (error) {
+    if (isMissingWorkflowTableError(error)) {
+      console.warn("[orders/create] Skipping orderVendorFulfillment writes (schema not available)", {
+        orderId,
+        vendorCount: uniqueVendorIds.length,
+      });
+    } else {
+      logPrismaError("orders/create optional orderVendorFulfillment", error, {
+        orderId,
+        vendorCount: uniqueVendorIds.length,
+      });
+      logDeepError("orders/create optional orderVendorFulfillment", error, {
+        orderId,
+        vendorCount: uniqueVendorIds.length,
+      });
+    }
+  }
+
+  try {
+    await prisma.orderStatusAudit.createMany({
+      data: uniqueVendorIds.map((vendorId) => ({
+        orderId,
+        vendorId,
+        toStatus: "PENDING",
+        actorRole: "system",
+        actorId: userId,
+        note: "Order created and awaiting vendor acknowledgement",
+      })),
+    });
+  } catch (error) {
+    if (isMissingWorkflowTableError(error)) {
+      console.warn("[orders/create] Skipping orderStatusAudit writes (schema not available)", {
+        orderId,
+        vendorCount: uniqueVendorIds.length,
+      });
+    } else {
+      logPrismaError("orders/create optional orderStatusAudit", error, {
+        orderId,
+        vendorCount: uniqueVendorIds.length,
+      });
+      logDeepError("orders/create optional orderStatusAudit", error, {
+        orderId,
+        vendorCount: uniqueVendorIds.length,
+      });
+    }
+  }
+}
+
 function normalizePaymentMethodToCode(method: string): string {
   const normalized = method.toLowerCase();
 
@@ -437,32 +521,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         where: { userId },
       });
 
-      await tx.orderVendorFulfillment.createMany({
-        data: uniqueVendorIds.map((vendorId) => ({
-          orderId: createdOrder.id,
-          vendorId,
-          orderStatus: "PENDING",
-          shippingStatus: "PENDING",
-          confirmationDueAt,
-        })),
-        skipDuplicates: true,
-      });
-
-      await tx.orderStatusAudit.createMany({
-        data: uniqueVendorIds.map((vendorId) => ({
-          orderId: createdOrder.id,
-          vendorId,
-          toStatus: "PENDING",
-          actorRole: "system",
-          actorId: userId,
-          note: "Order created and awaiting vendor acknowledgement",
-        })),
-      });
-
       return createdOrder;
     }, {
       maxWait: 5000,
       timeout: 10000,
+    });
+
+    await runOptionalOrderWorkflowWrites({
+      orderId: order.id,
+      userId,
+      uniqueVendorIds,
+      confirmationDueAt,
     });
 
     await runPostOrderSideEffects({
