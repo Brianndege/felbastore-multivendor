@@ -28,6 +28,17 @@ const CreateOrderBodySchema = z.object({
   selectedZoneIds: z.record(z.any()).optional(),
 });
 
+type CreatedOrderWithItems = Prisma.OrderGetPayload<{
+  include: {
+    orderItems: {
+      include: {
+        product: true;
+        vendor: true;
+      };
+    };
+  };
+}>;
+
 function logPrismaError(context: string, error: unknown, extra?: Record<string, unknown>) {
   if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientUnknownRequestError) {
     console.error(`[${context}] Prisma error`, {
@@ -79,6 +90,117 @@ function toOptionalNumber(input: unknown): number | undefined {
     return Number.isFinite(parsed) ? parsed : undefined;
   }
   return undefined;
+}
+
+async function runPostOrderSideEffects(input: {
+  order: CreatedOrderWithItems;
+  userId: string;
+  uniqueVendorIds: string[];
+  normalizedPaymentMethod: string;
+}) {
+  const { order, userId, uniqueVendorIds, normalizedPaymentMethod } = input;
+
+  const notificationWrites = [
+    prisma.notification.create({
+      data: {
+        userId,
+        type: "order",
+        title: "Order Placed - Waiting for Vendor Confirmation",
+        message: `Your order #${order.orderNumber} has been placed and is pending vendor confirmation.`,
+        data: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber }),
+      },
+    }),
+    ...uniqueVendorIds.map((vendorId) => {
+      const vendorLineItems = order.orderItems.filter((item) => item.vendorId === vendorId);
+      const lineItemCount = vendorLineItems.reduce((sum, item) => sum + item.quantity, 0);
+
+      return prisma.notification.create({
+        data: {
+          vendorId,
+          type: "order",
+          title: "New Pending Order",
+          message: `Order #${order.orderNumber} includes ${lineItemCount} item(s) for your store and needs confirmation.`,
+          data: JSON.stringify({
+            orderId: order.id,
+            orderNumber: order.orderNumber,
+            itemCount: lineItemCount,
+          }),
+        },
+      });
+    }),
+  ];
+
+  const sideEffectTasks: Array<Promise<unknown>> = [
+    Promise.all(notificationWrites),
+    enqueueOutboxEvent({
+      topic: "order.created",
+      entityType: "order",
+      entityId: order.id,
+      payload: {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        userId,
+        totalAmount: Number(order.totalAmount),
+        paymentMethod: normalizedPaymentMethod,
+        createdAt: order.createdAt.toISOString(),
+      },
+    }),
+  ];
+
+  const userRecordPromise = prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true, name: true },
+  });
+
+  const vendorsPromise = prisma.vendor.findMany({
+    where: { id: { in: uniqueVendorIds } },
+    select: { id: true, email: true, storeName: true },
+  });
+
+  const [userRecord, vendors] = await Promise.all([userRecordPromise, vendorsPromise]);
+
+  if (userRecord?.email) {
+    sideEffectTasks.push(
+      sendOrderCreatedEmailToUser({
+        email: userRecord.email,
+        customerName: userRecord.name || undefined,
+        orderNumber: order.orderNumber,
+        amountLabel: formatCurrency(Number(order.totalAmount), order.orderItems[0]?.product?.currency || "KES"),
+      })
+    );
+  }
+
+  sideEffectTasks.push(
+    Promise.all(
+      vendors.map((vendor) => {
+        const lineItems = order.orderItems.filter((item) => item.vendorId === vendor.id);
+        const itemSummary = lineItems.map((item) => `${item.quantity}x ${item.productName}`).join(", ");
+
+        return sendOrderCreatedEmailToVendor({
+          email: vendor.email,
+          storeName: vendor.storeName,
+          orderNumber: order.orderNumber,
+          itemSummary,
+        });
+      })
+    )
+  );
+
+  const sideEffects = await Promise.allSettled(sideEffectTasks);
+  const failedSideEffects = sideEffects.filter((result) => result.status === "rejected") as PromiseRejectedResult[];
+
+  if (failedSideEffects.length > 0) {
+    console.error("[orders/create] Post-order side effects failed", {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      failedCount: failedSideEffects.length,
+      reasons: failedSideEffects.map((entry) =>
+        entry.reason instanceof Error
+          ? { message: entry.reason.message, stack: entry.reason.stack }
+          : { reason: entry.reason }
+      ),
+    });
+  }
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -168,13 +290,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // Calculate totals and validate inventory before opening a transaction.
-    let subtotal = 0;
+    // Calculate totals with Decimal arithmetic and validate inventory before opening a transaction.
+    let subtotal = new Prisma.Decimal(0);
     const orderItems = cartItems.map(item => {
-      const price = typeof item.product.price === 'number'
-        ? item.product.price
-        : Number(item.product.price);
-      if (!Number.isFinite(price) || price < 0) {
+      const unitPriceDecimal = new Prisma.Decimal(item.product.price?.toString() || "0");
+      const unitPriceNumber = Number(unitPriceDecimal);
+
+      if (!Number.isFinite(unitPriceNumber) || unitPriceNumber < 0) {
         throw new Error(`INVALID_PRODUCT_PRICE:${item.product.id}`);
       }
       if (!item.product.vendorId) {
@@ -184,28 +306,28 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         throw new Error(`INSUFFICIENT_INVENTORY:${item.product.id}`);
       }
 
-      subtotal += price * item.quantity;
+      subtotal = subtotal.plus(unitPriceDecimal.mul(item.quantity));
 
       return {
         productId: item.product.id,
         vendorId: item.product.vendorId,
         quantity: item.quantity,
-        price: price,
+        price: unitPriceDecimal,
         productName: item.product.name,
         productImage: item.product.images?.[0] || null
       };
     });
 
-    const shippingAmount = 0;
-    const taxAmount = subtotal * 0.1;
-    const totalAmount = subtotal + shippingAmount + taxAmount;
+    const shippingAmountDecimal = new Prisma.Decimal(0);
+    const taxAmountDecimal = subtotal.mul(new Prisma.Decimal("0.1"));
+    const totalAmountDecimal = subtotal.plus(shippingAmountDecimal).plus(taxAmountDecimal);
 
     // Generate unique order number
     const orderNumber = `ORD-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
-    const decimalTotalAmount = new Prisma.Decimal(totalAmount.toFixed(2));
-    const decimalShippingAmount = new Prisma.Decimal(shippingAmount.toFixed(2));
-    const decimalTaxAmount = new Prisma.Decimal(taxAmount.toFixed(2));
+    const decimalTotalAmount = totalAmountDecimal.toDecimalPlaces(2);
+    const decimalShippingAmount = shippingAmountDecimal.toDecimalPlaces(2);
+    const decimalTaxAmount = taxAmountDecimal.toDecimalPlaces(2);
     const decimalDiscountAmount = new Prisma.Decimal(0);
 
     const uniqueVendorIds = Array.from(new Set(orderItems.map((item) => item.vendorId)));
@@ -289,86 +411,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return createdOrder;
     });
 
-    // Create in-app notifications for user and vendors.
-
-    const notificationWrites = [
-      prisma.notification.create({
-        data: {
-          userId,
-          type: "order",
-          title: "Order Placed - Waiting for Vendor Confirmation",
-          message: `Your order #${order.orderNumber} has been placed and is pending vendor confirmation.`,
-          data: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber }),
-        },
-      }),
-      ...uniqueVendorIds.map((vendorId) => {
-        const vendorLineItems = order.orderItems.filter((item) => item.vendorId === vendorId);
-        const lineItemCount = vendorLineItems.reduce((sum, item) => sum + item.quantity, 0);
-
-        return prisma.notification.create({
-          data: {
-            vendorId,
-            type: "order",
-            title: "New Pending Order",
-            message: `Order #${order.orderNumber} includes ${lineItemCount} item(s) for your store and needs confirmation.`,
-            data: JSON.stringify({
-              orderId: order.id,
-              orderNumber: order.orderNumber,
-              itemCount: lineItemCount,
-            }),
-          },
-        });
-      }),
-    ];
-
-    await Promise.all(notificationWrites);
-
-    await enqueueOutboxEvent({
-      topic: "order.created",
-      entityType: "order",
-      entityId: order.id,
-      payload: {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        userId,
-        totalAmount: Number(order.totalAmount),
-        paymentMethod: normalizedPaymentMethod,
-        createdAt: order.createdAt.toISOString(),
-      },
+    await runPostOrderSideEffects({
+      order,
+      userId,
+      uniqueVendorIds,
+      normalizedPaymentMethod,
     });
-
-    const userRecord = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true },
-    });
-
-    if (userRecord?.email) {
-      await sendOrderCreatedEmailToUser({
-        email: userRecord.email,
-        customerName: userRecord.name || undefined,
-        orderNumber: order.orderNumber,
-        amountLabel: formatCurrency(Number(order.totalAmount), order.orderItems[0]?.product?.currency || "KES"),
-      });
-    }
-
-    const vendors = await prisma.vendor.findMany({
-      where: { id: { in: uniqueVendorIds } },
-      select: { id: true, email: true, storeName: true },
-    });
-
-    await Promise.all(
-      vendors.map((vendor) => {
-        const lineItems = order.orderItems.filter((item) => item.vendorId === vendor.id);
-        const itemSummary = lineItems.map((item) => `${item.quantity}x ${item.productName}`).join(", ");
-
-        return sendOrderCreatedEmailToVendor({
-          email: vendor.email,
-          storeName: vendor.storeName,
-          orderNumber: order.orderNumber,
-          itemSummary,
-        });
-      })
-    );
 
     return res.status(201).json({
       order,
@@ -403,6 +451,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         error: "Cart contains products with invalid pricing",
         code: "INVALID_CART_PRODUCT_PRICE",
       });
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      if (error.code === "P2002") {
+        return res.status(409).json({
+          error: "Order already exists. Please refresh and try again.",
+          code: "ORDER_CONFLICT",
+        });
+      }
+
+      if (error.code === "P2003") {
+        return res.status(409).json({
+          error: "Cart contains stale product or vendor references. Please refresh cart and retry.",
+          code: "STALE_CART_RELATION",
+        });
+      }
     }
 
     logPrismaError("orders/create", error, {
