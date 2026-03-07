@@ -89,10 +89,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const userIds = Array.from(
-      new Set(
+      new Set<string>(
         orders
-          .map((order: any) => (typeof order?.userId === "string" ? order.userId : ""))
-          .filter((id: string) => id.length > 0)
+          .map((order: any): string | null => (typeof order?.userId === "string" ? order.userId : null))
+          .filter((id): id is string => typeof id === "string" && id.length > 0)
       )
     );
 
