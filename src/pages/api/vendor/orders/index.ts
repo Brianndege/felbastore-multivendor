@@ -88,13 +88,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       take: 100,
     });
 
-    const userIds = Array.from(
-      new Set<string>(
-        orders
-          .map((order: any): string | null => (typeof order?.userId === "string" ? order.userId : null))
-          .filter((id: unknown): id is string => typeof id === "string" && id.length > 0)
-      )
-    );
+    const collectedUserIds: string[] = [];
+    for (const order of orders) {
+      if (typeof order?.userId === "string" && order.userId.length > 0) {
+        collectedUserIds.push(order.userId);
+      }
+    }
+    const userIds: string[] = Array.from(new Set(collectedUserIds));
 
     const users = userIds.length
       ? await prisma.user.findMany({
