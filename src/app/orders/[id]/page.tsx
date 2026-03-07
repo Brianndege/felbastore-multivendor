@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, Suspense, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
@@ -19,6 +19,9 @@ import {
   Clock,
   XCircle,
 } from "lucide-react";
+import { formatCurrency } from "@/lib/currency";
+import RoleAwareAssistant from "@/components/assistant/RoleAwareAssistant";
+import OrderTimeline from "@/components/orders/OrderTimeline";
 
 // Status badge styling
 const getStatusColor = (status: string) => {
@@ -31,6 +34,8 @@ const getStatusColor = (status: string) => {
       return "bg-purple-100 text-purple-800 hover:bg-purple-100";
     case "shipped":
       return "bg-indigo-100 text-indigo-800 hover:bg-indigo-100";
+    case "in_transit":
+      return "bg-sky-100 text-sky-800 hover:bg-sky-100";
     case "delivered":
       return "bg-green-100 text-green-800 hover:bg-green-100";
     case "cancelled":
@@ -54,6 +59,8 @@ const getStatusIcon = (status: string) => {
       return <Package className="h-5 w-5" />;
     case "shipped":
       return <Truck className="h-5 w-5" />;
+    case "in_transit":
+      return <Truck className="h-5 w-5" />;
     case "delivered":
       return <CheckCircle className="h-5 w-5" />;
     case "cancelled":
@@ -67,13 +74,101 @@ const getStatusIcon = (status: string) => {
 function OrderDetailContent() {
   const [order, setOrder] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [messageThreads, setMessageThreads] = useState<Record<string, Array<{ id: string; senderRole: string; senderId: string; message: string; createdAt: string }>>>({});
+  const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
+  const [loadingThreads, setLoadingThreads] = useState<Record<string, boolean>>({});
   const router = useRouter();
   const { data: session, status } = useSession();
+  const assistantRole =
+    session?.user?.role === "admin" || session?.user?.role === "vendor" || session?.user?.role === "user"
+      ? session.user.role
+      : "user";
 
   // Get the order ID from the URL without using useParams
   const id = typeof window !== 'undefined'
     ? window.location.pathname.split('/').pop()
     : '';
+
+  const runLifecycleAction = async (vendorId: string, action: "confirm_receipt" | "open_dispute" | "request_refund") => {
+    const reason =
+      action === "open_dispute" || action === "request_refund"
+        ? window.prompt(action === "open_dispute" ? "Describe the issue" : "Reason for refund request", "") || ""
+        : "";
+
+    try {
+      const response = await fetch(`/api/orders/${id}/lifecycle`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: window.location.origin,
+          Referer: window.location.href,
+        },
+        body: JSON.stringify({
+          vendorId,
+          action,
+          reason,
+        }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to process action");
+      }
+
+      toast.success("Order lifecycle updated");
+      const refreshed = await fetch(`/api/orders/${id}`);
+      if (refreshed.ok) {
+        const data = await refreshed.json();
+        setOrder(data);
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to process action");
+    }
+  };
+
+  const loadVendorMessages = useCallback(async (vendorId: string) => {
+    setLoadingThreads((prev) => ({ ...prev, [vendorId]: true }));
+    try {
+      const response = await fetch(`/api/orders/${id}/messages?vendorId=${encodeURIComponent(vendorId)}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to load messages");
+      }
+      setMessageThreads((prev) => ({ ...prev, [vendorId]: Array.isArray(payload.messages) ? payload.messages : [] }));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to load messages");
+    } finally {
+      setLoadingThreads((prev) => ({ ...prev, [vendorId]: false }));
+    }
+  }, [id]);
+
+  const sendVendorMessage = async (vendorId: string) => {
+    const draft = (messageDrafts[vendorId] || "").trim();
+    if (!draft) return;
+
+    try {
+      const response = await fetch(`/api/orders/${id}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Origin: window.location.origin,
+          Referer: window.location.href,
+        },
+        body: JSON.stringify({ vendorId, message: draft }),
+      });
+
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Failed to send message");
+      }
+
+      setMessageDrafts((prev) => ({ ...prev, [vendorId]: "" }));
+      await loadVendorMessages(vendorId);
+      toast.success("Message sent to vendor");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to send message");
+    }
+  };
 
   useEffect(() => {
     if (status === "loading") return;
@@ -109,6 +204,17 @@ function OrderDetailContent() {
       fetchOrderDetails();
     }
   }, [id, session, status, router]);
+
+  useEffect(() => {
+    if (!Array.isArray(order?.vendorFulfillments)) return;
+
+    for (const entry of order.vendorFulfillments) {
+      if (!entry?.vendorId || messageThreads[entry.vendorId]) {
+        continue;
+      }
+      void loadVendorMessages(entry.vendorId);
+    }
+  }, [order, messageThreads, loadVendorMessages]);
 
   if (status === "loading" || isLoading) {
     return (
@@ -165,9 +271,28 @@ function OrderDetailContent() {
           <div>
             <Badge variant="outline" className={getStatusColor(order.status)}>
               {getStatusIcon(order.status)}
-              <span className="ml-1">{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</span>
+              <span className="ml-1">{String(order.status || "pending").replace(/_/g, " ")}</span>
             </Badge>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <RoleAwareAssistant
+            role={assistantRole}
+            context="order-detail"
+            orderStatus={order.status}
+            paymentStatus={order.paymentStatus}
+            orderNumber={order.orderNumber}
+            actions={[
+              { label: "Back to Orders", href: "/orders", variant: "outline" },
+              ...(order.status === "pending" && order.paymentStatus !== "paid"
+                ? [{ label: "Complete Payment", href: `/checkout/payment/${order.id}` }]
+                : []),
+              ...(order.status === "shipped" || order.status === "delivered"
+                ? [{ label: "Track Package", href: `/orders/${id}/track` }]
+                : []),
+            ]}
+          />
         </div>
 
         {/* Order information cards */}
@@ -201,15 +326,14 @@ function OrderDetailContent() {
                               {item.productName || item.product?.name}
                             </h4>
                             <span className="font-medium">
-                              ${((typeof item.price === 'number'
-                                ? item.price
-                                : Number(item.price)) * item.quantity).toFixed(2)}
+                              {formatCurrency(
+                                ((typeof item.price === 'number' ? item.price : Number(item.price)) * item.quantity),
+                                item.product?.currency || "KES"
+                              )}
                             </span>
                           </div>
                           <p className="text-sm text-gray-500">
-                            ${(typeof item.price === 'number'
-                              ? item.price
-                              : Number(item.price)).toFixed(2)} × {item.quantity}
+                            {formatCurrency((typeof item.price === 'number' ? item.price : Number(item.price)), item.product?.currency || "KES")} × {item.quantity}
                           </p>
                           {item.product?.vendor && (
                             <p className="text-sm text-gray-500">
@@ -283,6 +407,110 @@ function OrderDetailContent() {
                 </div>
               </CardContent>
             </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle>Vendor Fulfillment Timeline</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {Array.isArray(order.vendorFulfillments) && order.vendorFulfillments.length > 0 ? (
+                  order.vendorFulfillments.map((entry: any) => (
+                    <div key={entry.id} className="rounded-md border p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="font-medium">{entry.vendorName || "Vendor"}</p>
+                        <Badge variant="outline" className={getStatusColor(entry.orderStatus || "pending")}>
+                          {(entry.orderStatus || "pending").replace("_", " ")}
+                        </Badge>
+                      </div>
+
+                      <div className="mt-2 text-sm text-gray-600 space-y-1">
+                        <p>Shipping status: {(entry.shippingStatus || "pending").replace("_", " ")}</p>
+                        {entry.shippingProvider ? <p>Carrier: {entry.shippingProvider}</p> : null}
+                        {entry.trackingNumber ? <p>Tracking #: {entry.trackingNumber}</p> : null}
+                        {entry.trackingUrl ? (
+                          <p>
+                            Tracking link: <a className="text-blue-600 underline" href={entry.trackingUrl} target="_blank" rel="noreferrer">Open tracking</a>
+                          </p>
+                        ) : null}
+                        {entry.estimatedDeliveryAt ? <p>Estimated delivery: {format(new Date(entry.estimatedDeliveryAt), "MMM d, yyyy")}</p> : null}
+                      </div>
+
+                      <div className="mt-3">
+                        <OrderTimeline
+                          status={entry.orderStatus || "pending"}
+                          timestamps={{
+                            confirmedAt: entry.confirmedAt,
+                            processedAt: entry.processingAt,
+                            shippedAt: entry.shippedAt,
+                            deliveredAt: entry.deliveredAt,
+                          }}
+                        />
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void runLifecycleAction(entry.vendorId, "confirm_receipt")}
+                          disabled={entry.orderStatus !== "delivered" && entry.orderStatus !== "completed"}
+                        >
+                          Confirm Receipt
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void runLifecycleAction(entry.vendorId, "open_dispute")}
+                        >
+                          Open Dispute
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void runLifecycleAction(entry.vendorId, "request_refund")}
+                        >
+                          Request Refund
+                        </Button>
+                      </div>
+
+                      <div className="mt-4 rounded-md border bg-gray-50 p-3">
+                        <p className="text-sm font-medium">Message Vendor</p>
+                        <div className="mt-2 space-y-2">
+                          {loadingThreads[entry.vendorId] ? (
+                            <p className="text-xs text-gray-500">Loading messages...</p>
+                          ) : Array.isArray(messageThreads[entry.vendorId]) && messageThreads[entry.vendorId].length > 0 ? (
+                            messageThreads[entry.vendorId].map((msg) => (
+                              <div key={msg.id} className="rounded border bg-white px-2 py-1 text-xs">
+                                <p className="font-medium capitalize">{msg.senderRole}</p>
+                                <p>{msg.message}</p>
+                                <p className="text-gray-500">{format(new Date(msg.createdAt), "MMM d, yyyy HH:mm")}</p>
+                              </div>
+                            ))
+                          ) : (
+                            <p className="text-xs text-gray-500">No messages yet for this vendor.</p>
+                          )}
+                        </div>
+
+                        <div className="mt-2 flex gap-2">
+                          <input
+                            className="h-9 flex-1 rounded-md border border-input bg-background px-3 text-sm"
+                            value={messageDrafts[entry.vendorId] || ""}
+                            onChange={(event) =>
+                              setMessageDrafts((prev) => ({ ...prev, [entry.vendorId]: event.target.value }))
+                            }
+                            placeholder="Write a message to this vendor"
+                          />
+                          <Button size="sm" variant="outline" onClick={() => void sendVendorMessage(entry.vendorId)}>
+                            Send
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-gray-500">No vendor timeline data available yet.</p>
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {/* Order Summary */}
@@ -344,30 +572,30 @@ function OrderDetailContent() {
                     <div className="space-y-2">
                       <div className="flex justify-between">
                         <span className="text-sm text-gray-500">Subtotal</span>
-                        <span className="text-sm">${(Number(order.totalAmount) - Number(order.taxAmount) - Number(order.shippingAmount) + Number(order.discountAmount)).toFixed(2)}</span>
+                        <span className="text-sm">{formatCurrency((Number(order.totalAmount) - Number(order.taxAmount) - Number(order.shippingAmount) + Number(order.discountAmount)), order.orderItems?.[0]?.product?.currency || "KES")}</span>
                       </div>
                       {Number(order.shippingAmount) > 0 && (
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500">Shipping</span>
-                          <span className="text-sm">${Number(order.shippingAmount).toFixed(2)}</span>
+                          <span className="text-sm">{formatCurrency(Number(order.shippingAmount), order.orderItems?.[0]?.product?.currency || "KES")}</span>
                         </div>
                       )}
                       {Number(order.taxAmount) > 0 && (
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500">Tax</span>
-                          <span className="text-sm">${Number(order.taxAmount).toFixed(2)}</span>
+                          <span className="text-sm">{formatCurrency(Number(order.taxAmount), order.orderItems?.[0]?.product?.currency || "KES")}</span>
                         </div>
                       )}
                       {Number(order.discountAmount) > 0 && (
                         <div className="flex justify-between">
                           <span className="text-sm text-gray-500">Discount</span>
-                          <span className="text-sm text-green-600">-${Number(order.discountAmount).toFixed(2)}</span>
+                          <span className="text-sm text-green-600">-{formatCurrency(Number(order.discountAmount), order.orderItems?.[0]?.product?.currency || "KES")}</span>
                         </div>
                       )}
                       <Separator />
                       <div className="flex justify-between font-medium">
                         <span>Total</span>
-                        <span>${Number(order.totalAmount).toFixed(2)}</span>
+                        <span>{formatCurrency(Number(order.totalAmount), order.orderItems?.[0]?.product?.currency || "KES")}</span>
                       </div>
                     </div>
                   </div>

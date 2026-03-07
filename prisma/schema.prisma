@@ -54,6 +54,18 @@ enum OrderLifecycleStatus {
   REFUNDED
 }
 
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PROCESSING
+  SHIPPED
+  IN_TRANSIT
+  DELIVERED
+  COMPLETED
+  CANCELLED
+  REFUNDED
+}
+
 enum ShippingLifecycleStatus {
   PENDING
   LABEL_CREATED
@@ -147,6 +159,7 @@ model User {
   verificationTokens EmailVerificationToken[]
   cartItems         CartItem[]
   orders            Order[]
+  customerOrders    Order[]               @relation("OrderCustomer")
   reviews           Review[]
   wishlistItems     WishlistItem[]
   addresses         SavedAddress[]
@@ -154,6 +167,7 @@ model User {
   orderMessages     OrderConversationMessage[]
   analytics         UserAnalytics[]
   otpChallenges     EmailOtpChallenge[]
+  orderLogs         OrderLog[]            @relation("OrderLogActorUser")
 }
 
 // ----------------------
@@ -196,8 +210,10 @@ model Vendor {
   deliveryZones     VendorDeliveryZone[]
   paymentMethods    VendorPaymentMethod[]
   orderFulfillments OrderVendorFulfillment[]
+  primaryVendorOrders Order[]             @relation("OrderPrimaryVendor")
   orderMessages     OrderConversationMessage[]
   otpChallenges     EmailOtpChallenge[]
+  orderLogs         OrderLog[]            @relation("OrderLogActorVendor")
 }
 
 // ----------------------
@@ -308,29 +324,63 @@ model Order {
   id              String   @id @default(cuid())
   orderNumber     String   @unique
   userId          String
+  customerId      String?
+  vendorId        String?
   status          String   @default("pending")
+  lifecycleStatus OrderStatus @default(PENDING)
   totalAmount     Decimal  @db.Decimal(10, 2)
   shippingAmount  Decimal  @db.Decimal(10, 2) @default(0)
   taxAmount       Decimal  @db.Decimal(10, 2) @default(0)
   discountAmount  Decimal  @db.Decimal(10, 2) @default(0)
   paymentStatus   String   @default("pending")
+  shippingProvider String?
+  trackingNumber   String?
   paymentMethod   String?
   paymentIntentId String?  @unique
   shippingAddress String   @db.Text
   billingAddress  String   @db.Text
+  confirmedAt     DateTime?
+  processedAt     DateTime?
+  shippedAt       DateTime?
+  deliveredAt     DateTime?
   notes           String?  @db.Text
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   user       User        @relation(fields: [userId], references: [id])
+  customer   User?       @relation("OrderCustomer", fields: [customerId], references: [id])
+  vendor     Vendor?     @relation("OrderPrimaryVendor", fields: [vendorId], references: [id])
   orderItems OrderItem[]
   vendorFulfillments OrderVendorFulfillment[]
   statusAudits OrderStatusAudit[]
+  logs       OrderLog[]
   messages OrderConversationMessage[]
 
   @@index([userId])
+  @@index([customerId])
+  @@index([vendorId])
   @@index([status])
+  @@index([lifecycleStatus])
   @@index([orderNumber])
+}
+
+model OrderLog {
+  id          String      @id @default(cuid())
+  orderId     String
+  vendorId    String?
+  actorUserId String?
+  actorRole   String
+  fromStatus  OrderStatus?
+  toStatus    OrderStatus
+  note        String?
+  createdAt   DateTime    @default(now())
+
+  order       Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendor      Vendor?     @relation("OrderLogActorVendor", fields: [vendorId], references: [id])
+  actorUser   User?       @relation("OrderLogActorUser", fields: [actorUserId], references: [id])
+
+  @@index([orderId, createdAt])
+  @@index([vendorId, createdAt])
 }
 
 model OrderConversationMessage {
