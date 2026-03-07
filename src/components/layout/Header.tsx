@@ -562,7 +562,7 @@ export default function Header() {
             id="mobile-navigation"
             role="navigation"
             aria-label="Mobile navigation"
-            className={`relative ml-auto h-full w-[92vw] max-w-md overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
+            className={`relative ml-auto h-full w-full overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
               isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
