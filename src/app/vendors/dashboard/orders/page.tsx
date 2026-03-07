@@ -29,13 +29,20 @@ type VendorOrder = {
   itemCount: number;
   currency: string;
   customer: {
-    name: string;
-    email: string;
+    name?: string;
+    email?: string;
   };
   canUpdateStatus: boolean;
 };
 
 const STATUS_TABS = ["all", "pending", "confirmed", "processing", "shipped", "in_transit", "delivered", "cancelled"] as const;
+
+function formatOrderDate(value: string | undefined): string {
+  if (!value) return "Unknown date";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "Unknown date";
+  return format(parsed, "MMM d, yyyy HH:mm");
+}
 
 function getStatusBadgeClass(status: string): string {
   switch (status) {
@@ -159,12 +166,12 @@ export default function VendorOrdersPage() {
                   <div>
                     <CardTitle className="text-base">Order #{order.orderNumber}</CardTitle>
                     <p className="text-xs text-muted-foreground">
-                      Placed {format(new Date(order.createdAt), "MMM d, yyyy HH:mm")} by {order.customer.name}
+                      Placed {formatOrderDate(order?.createdAt)} by {order?.customer?.name || "Customer"}
                     </p>
                   </div>
                   <div className="flex gap-2">
-                    <Badge className={getStatusBadgeClass(order.status)}>{order.status}</Badge>
-                    <Badge variant="outline">Payment: {order.paymentStatus}</Badge>
+                    <Badge className={getStatusBadgeClass(order?.status || "pending")}>{order?.status || "pending"}</Badge>
+                    <Badge variant="outline">Payment: {order?.paymentStatus || "pending"}</Badge>
                   </div>
                 </div>
               </CardHeader>

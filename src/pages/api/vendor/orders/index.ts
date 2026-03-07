@@ -28,6 +28,18 @@ type VendorOrderSummary = {
   canUpdateStatus: boolean;
 };
 
+function normalizeLifecycleStatus(value: unknown, fallback = "pending"): string {
+  const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
+  return normalized || fallback;
+}
+
+function deriveShippingStatus(orderStatus: string): string {
+  if (orderStatus === "shipped") return "shipped";
+  if (orderStatus === "in_transit") return "in_transit";
+  if (orderStatus === "delivered") return "delivered";
+  return "pending";
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -65,11 +77,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 currency: true,
               },
             },
-            vendor: {
-              select: {
-                id: true,
-              },
-            },
           },
         },
         vendorFulfillments: {
@@ -81,48 +88,78 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     });
 
     const payload: VendorOrderSummary[] = [];
+    let skippedOrders = 0;
 
     for (const order of orders) {
-      const vendorItems = order.orderItems.filter((item: any) => item.vendorId === vendorId);
-      const vendorAmount = vendorItems.reduce((sum: number, item: any) => sum + Number(item.price) * item.quantity, 0);
-      const currency = vendorItems[0]?.product?.currency || "KES";
-      const canUpdateStatus = order.orderItems.every((item: any) => item.vendorId === vendorId);
-      const fulfillment = order.vendorFulfillments[0];
-      if (!fulfillment) {
-        continue;
-      }
+      try {
+        const vendorItems = Array.isArray(order.orderItems)
+          ? order.orderItems.filter((item: any) => item?.vendorId === vendorId)
+          : [];
+        if (vendorItems.length === 0) {
+          skippedOrders += 1;
+          continue;
+        }
 
-      payload.push({
-        id: order.id,
-        orderNumber: order.orderNumber,
-        status: fulfillment.orderStatus.toLowerCase(),
-        shippingStatus: fulfillment.shippingStatus.toLowerCase(),
-        trackingNumber: fulfillment.trackingNumber,
-        shippingProvider: fulfillment.shippingProvider,
-        trackingUrl: fulfillment.trackingUrl,
-        estimatedDeliveryAt: fulfillment.estimatedDeliveryAt,
-        confirmationDueAt: fulfillment.confirmationDueAt,
-        paymentStatus: order.paymentStatus,
-        createdAt: order.createdAt,
-        totalAmount: Number(order.totalAmount),
-        vendorAmount: Number(vendorAmount.toFixed(2)),
-        currency,
-        itemCount: vendorItems.reduce((sum: number, item: any) => sum + item.quantity, 0),
-        customer: {
-          name: order.user?.name || "Customer",
-          email: order.user?.email || "",
-        },
-        canUpdateStatus,
-      });
+        const vendorAmount = vendorItems.reduce((sum: number, item: any) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
+        const currency = vendorItems[0]?.product?.currency || "KES";
+        const canUpdateStatus = order.orderItems.every((item: any) => item?.vendorId === vendorId);
+        const fulfillment = order.vendorFulfillments?.[0];
+
+        const status = normalizeLifecycleStatus(fulfillment?.orderStatus, normalizeLifecycleStatus(order.status, "pending"));
+        const shippingStatus = normalizeLifecycleStatus(
+          fulfillment?.shippingStatus,
+          deriveShippingStatus(status)
+        );
+
+        payload.push({
+          id: order.id,
+          orderNumber: order.orderNumber,
+          status,
+          shippingStatus,
+          trackingNumber: fulfillment?.trackingNumber || null,
+          shippingProvider: fulfillment?.shippingProvider || null,
+          trackingUrl: fulfillment?.trackingUrl || null,
+          estimatedDeliveryAt: fulfillment?.estimatedDeliveryAt || null,
+          confirmationDueAt: fulfillment?.confirmationDueAt || null,
+          paymentStatus: order.paymentStatus,
+          createdAt: order.createdAt,
+          totalAmount: Number(order.totalAmount),
+          vendorAmount: Number(vendorAmount.toFixed(2)),
+          currency,
+          itemCount: vendorItems.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0),
+          customer: {
+            name: order.user?.name || "Customer",
+            email: order.user?.email || "",
+          },
+          canUpdateStatus,
+        });
+      } catch (rowError) {
+        skippedOrders += 1;
+        console.error("Error shaping vendor order row:", {
+          orderId: order?.id,
+          vendorId,
+          reason: rowError instanceof Error ? rowError.message : "unknown_row_error",
+        });
+      }
     }
 
     const filteredPayload = payload.filter((entry) =>
       requestedStatus && requestedStatus !== "all" ? entry.status === requestedStatus : true
     );
 
-    return res.status(200).json({ orders: filteredPayload });
+    return res.status(200).json({
+      orders: filteredPayload,
+      meta: {
+        totalMatchedOrders: payload.length,
+        skippedOrders,
+      },
+    });
   } catch (error) {
-    console.error("Error fetching vendor orders:", error);
-    return res.status(500).json({ error: "Internal server error" });
+    console.error("Error fetching vendor orders:", {
+      vendorId,
+      requestedStatus,
+      reason: error instanceof Error ? error.message : "unknown_vendor_orders_error",
+    });
+    return res.status(500).json({ error: "Failed to fetch vendor orders" });
   }
 }
