@@ -551,18 +551,11 @@ export default function Header() {
           }`}
           aria-hidden={!isMobileMenuOpen}
         >
-          <button
-            type="button"
-            aria-label="Close menu overlay"
-            className="absolute inset-0 bg-black/45"
-            onClick={closeMobileMenu}
-          />
-
           <nav
             id="mobile-navigation"
             role="navigation"
             aria-label="Mobile navigation"
-            className={`relative ml-auto h-full w-full overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
+            className={`h-full w-full overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
               isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
