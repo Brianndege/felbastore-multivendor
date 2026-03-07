@@ -76,7 +76,18 @@ export default function VendorOrdersPage() {
       try {
         const query = statusFilter === "all" ? "" : `?status=${encodeURIComponent(statusFilter)}`;
         const response = await fetch(`/api/vendor/orders${query}`);
-        const payload = (await response.json()) as { orders?: VendorOrder[]; error?: string };
+        const rawBody = await response.text();
+        let payload: { orders?: VendorOrder[]; error?: string } = {};
+
+        try {
+          payload = rawBody ? (JSON.parse(rawBody) as { orders?: VendorOrder[]; error?: string }) : {};
+        } catch {
+          payload = {
+            error: response.ok
+              ? "Unexpected non-JSON response from orders API"
+              : `Orders API returned ${response.status} ${response.statusText}`,
+          };
+        }
 
         if (!response.ok) {
           throw new Error(payload.error || "Failed to load orders");
