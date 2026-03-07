@@ -1,113 +1,64 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
+type PublicVendor = {
+  id: string;
+  name: string;
+  storeName: string;
+  description: string;
+  logo: string;
+  rating: number;
+  totalProducts: number;
+  totalSales: number;
+  joinedDate: string;
+  isNew?: boolean;
+  categories: string[];
+  location: string;
+  verified: boolean;
+};
+
 export default function VendorsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterMode, setFilterMode] = useState<"all" | "verified" | "new">("all");
+  const [vendors, setVendors] = useState<PublicVendor[]>([]);
+  const [loadingVendors, setLoadingVendors] = useState(true);
   const debouncedSearch = useDebouncedValue(searchQuery, 350);
 
-  // Mock vendor data - in a real app, this would come from your database
-  const vendors = useMemo(() => [
-    {
-      id: "1",
-      name: "AudioTech",
-      storeName: "AudioTech Store",
-      description: "Premium audio equipment and accessories for audiophiles",
-      logo: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=200&auto=format&fit=crop&q=60",
-      banner: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=800&auto=format&fit=crop&q=60",
-      rating: 4.8,
-      totalProducts: 45,
-      totalSales: 1250,
-      joinedDate: "2023-01-15",
-      categories: ["Electronics", "Audio"],
-      location: "New York, USA",
-      verified: true,
-    },
-    {
-      id: "2",
-      name: "EcoWear",
-      storeName: "EcoWear Sustainable Fashion",
-      description: "Sustainable and eco-friendly fashion for conscious consumers",
-      logo: "https://images.unsplash.com/photo-1441986300917-64674bd600d8?w=200&auto=format&fit=crop&q=60",
-      banner: "https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800&auto=format&fit=crop&q=60",
-      rating: 4.6,
-      totalProducts: 78,
-      totalSales: 890,
-      joinedDate: "2023-02-20",
-      categories: ["Fashion", "Sustainable"],
-      location: "California, USA",
-      verified: true,
-    },
-    {
-      id: "3",
-      name: "NatureCare",
-      storeName: "NatureCare Beauty",
-      description: "Natural skincare and beauty products for healthy living",
-      logo: "https://images.unsplash.com/photo-1596462502278-27bfdc403348?w=200&auto=format&fit=crop&q=60",
-      banner: "https://images.unsplash.com/photo-1556227834-09f1de7a7d14?w=800&auto=format&fit=crop&q=60",
-      rating: 4.9,
-      totalProducts: 32,
-      totalSales: 567,
-      joinedDate: "2023-03-10",
-      categories: ["Beauty & Health", "Natural"],
-      location: "Oregon, USA",
-      verified: true,
-    },
-    {
-      id: "4",
-      name: "TechInnovate",
-      storeName: "TechInnovate Solutions",
-      description: "Cutting-edge smart home and IoT devices",
-      logo: "https://images.unsplash.com/photo-1498049794561-7780e7231661?w=200&auto=format&fit=crop&q=60",
-      banner: "https://images.unsplash.com/photo-1546054454-aa26e2b734c7?w=800&auto=format&fit=crop&q=60",
-      rating: 4.4,
-      totalProducts: 28,
-      totalSales: 445,
-      joinedDate: "2023-04-05",
-      categories: ["Electronics", "Smart Home"],
-      location: "Texas, USA",
-      verified: false,
-    },
-    {
-      id: "5",
-      name: "ArtisanCrafts",
-      storeName: "Artisan Crafts & More",
-      description: "Handcrafted items and unique artisan products",
-      logo: "https://images.unsplash.com/photo-1452860606245-08befc0ff44b?w=200&auto=format&fit=crop&q=60",
-      banner: "https://images.unsplash.com/photo-1595185584522-061e4a462262?w=800&auto=format&fit=crop&q=60",
-      rating: 4.7,
-      totalProducts: 156,
-      totalSales: 2100,
-      joinedDate: "2022-11-12",
-      categories: ["Handmade", "Art & Collectibles"],
-      location: "Vermont, USA",
-      verified: true,
-    },
-    {
-      id: "6",
-      name: "EcoLiving",
-      storeName: "EcoLiving Essentials",
-      description: "Eco-friendly products for sustainable living",
-      logo: "https://images.unsplash.com/photo-1586023492125-27b2c045efd7?w=200&auto=format&fit=crop&q=60",
-      banner: "https://images.unsplash.com/photo-1602143407151-7111542de6e8?w=800&auto=format&fit=crop&q=60",
-      rating: 4.5,
-      totalProducts: 67,
-      totalSales: 723,
-      joinedDate: "2023-05-18",
-      categories: ["Home & Garden", "Sustainable"],
-      location: "Colorado, USA",
-      verified: true,
-    },
-  ], []);
+  useEffect(() => {
+    let active = true;
 
-  const featuredVendors = vendors.filter(vendor => vendor.verified && vendor.rating >= 4.7);
+    const loadVendors = async () => {
+      setLoadingVendors(true);
+      try {
+        const response = await fetch("/api/vendors/public");
+        const payload = (await response.json()) as { vendors?: PublicVendor[] };
+        if (!active) return;
+
+        setVendors(Array.isArray(payload.vendors) ? payload.vendors : []);
+      } catch (error) {
+        console.error("Failed to load public vendors:", error);
+        if (!active) return;
+        setVendors([]);
+      } finally {
+        if (active) setLoadingVendors(false);
+      }
+    };
+
+    void loadVendors();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const featuredVendors = vendors.filter((vendor) => vendor.verified && vendor.rating >= 4.7);
   const normalizedQuery = debouncedSearch.trim().toLowerCase();
   const isSearching = searchQuery !== debouncedSearch;
 
@@ -115,6 +66,7 @@ export default function VendorsPage() {
     const filteredByMode = vendors.filter((vendor) => {
       if (filterMode === "verified") return vendor.verified;
       if (filterMode === "new") {
+        if (vendor.isNew) return true;
         const joined = new Date(vendor.joinedDate).getTime();
         const ninetyDaysAgo = Date.now() - 90 * 24 * 60 * 60 * 1000;
         return joined >= ninetyDaysAgo;
@@ -176,12 +128,17 @@ export default function VendorsPage() {
       {/* Featured Vendors */}
       <div className="mb-12">
         <h2 className="text-2xl font-bold mb-6 text-[#e16b22]">Featured Vendors</h2>
+        {loadingVendors ? (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Loading vendors...</div>
+        ) : featuredVendors.length === 0 ? (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No featured vendors available yet.</div>
+        ) : (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {featuredVendors.map((vendor) => (
             <Card key={`featured-${vendor.id}`} className="overflow-hidden">
-              <div className="aspect-[16/9] w-full overflow-hidden">
+              <div className="aspect-[16/9] w-full overflow-hidden bg-muted">
                 <img
-                  src={vendor.banner}
+                  src={vendor.logo || "/placeholder-product.jpg"}
                   alt={vendor.storeName}
                   className="h-full w-full object-cover"
                 />
@@ -201,6 +158,11 @@ export default function VendorsPage() {
                       {vendor.verified && (
                         <Badge variant="secondary" className="text-xs">
                           ✓ Verified
+                        </Badge>
+                      )}
+                      {vendor.isNew && (
+                        <Badge variant="outline" className="text-xs border-emerald-300 text-emerald-700">
+                          New
                         </Badge>
                       )}
                     </div>
@@ -230,19 +192,22 @@ export default function VendorsPage() {
                     {vendor.totalProducts} products
                   </span>
                   <Button asChild size="sm">
-                    <Link href={`/vendors/${vendor.id}`}>Visit Store</Link>
+                    <Link href={`/products?q=${encodeURIComponent(vendor.storeName)}`}>Visit Store</Link>
                   </Button>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       {/* All Vendors */}
       <div>
         <h2 className="text-2xl font-bold mb-6 text-[#e16b22]">All Vendors</h2>
-        {filteredVendors.length === 0 ? (
+        {loadingVendors ? (
+          <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Loading vendors...</div>
+        ) : filteredVendors.length === 0 ? (
           <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
             No results found.
           </div>
@@ -266,6 +231,11 @@ export default function VendorsPage() {
                         {vendor.verified && (
                           <Badge variant="secondary" className="text-xs">
                             ✓ Verified
+                          </Badge>
+                        )}
+                        {vendor.isNew && (
+                          <Badge variant="outline" className="text-xs border-emerald-300 text-emerald-700">
+                            New
                           </Badge>
                         )}
                       </div>
@@ -301,7 +271,7 @@ export default function VendorsPage() {
                       Joined {new Date(vendor.joinedDate).toLocaleDateString()}
                     </div>
                     <Button asChild size="sm">
-                      <Link href={`/vendors/${vendor.id}`}>Visit Store</Link>
+                      <Link href={`/products?q=${encodeURIComponent(vendor.storeName)}`}>Visit Store</Link>
                     </Button>
                   </div>
                 </div>
