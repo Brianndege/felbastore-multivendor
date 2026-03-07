@@ -159,7 +159,7 @@ export default function VendorOrdersPage() {
         <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">No orders found for this filter.</div>
       ) : (
         <div className="space-y-4">
-          {orders.map((order) => (
+          {orders?.map((order) => (
             <Card key={order.id}>
               <CardHeader className="pb-3">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">

@@ -32,6 +32,7 @@
     "verify:inventory-ops": "node scripts/verify-inventory-ops.cjs",
     "verify:governance": "node scripts/verify-governance-consistency.cjs",
     "verify:release-readiness": "node scripts/verify-release-readiness.cjs",
+    "audit:orders:orphans": "node scripts/audit-orphaned-orders.cjs",
     "db:seed:safe": "node scripts/seed-guard.cjs",
     "cleanup:dummy:dry": "node scripts/cleanup-dummy-products.cjs",
     "cleanup:dummy:apply": "node scripts/cleanup-dummy-products.cjs --apply",

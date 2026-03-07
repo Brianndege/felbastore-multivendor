@@ -1,5 +1,5 @@
 [build]
-  command = "npx prisma generate && npm run build"
+  command = "npx prisma migrate deploy && npx prisma generate && npm run build"
   publish = ".next"
   functions = "netlify/functions"
 
@@ -9,16 +9,16 @@
   SECRETS_SCAN_OMIT_KEYS = "ALLOWED_ORIGINS"
 
 [context.production]
-  command = "npx prisma generate && npm run build"
+  command = "npx prisma migrate deploy && npx prisma generate && npm run build"
 
   [context.production.environment]
     SECRETS_SCAN_ENABLED = "false"
 
 [context.deploy-preview]
-  command = "npx prisma generate && npm run build"
+  command = "npx prisma migrate deploy && npx prisma generate && npm run build"
 
 [context.branch-deploy]
-  command = "npx prisma generate && npm run build"
+  command = "npx prisma migrate deploy && npx prisma generate && npm run build"
 
 [functions]
   directory = "netlify/functions"

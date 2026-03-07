@@ -58,6 +58,40 @@ function ensureAuthSchemaCompatibility() {
       );
 
       await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "customerId" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "vendorId" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "status" TEXT NOT NULL DEFAULT \'pending\''
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "lifecycleStatus" TEXT NOT NULL DEFAULT \'PENDING\''
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "paymentStatus" TEXT NOT NULL DEFAULT \'pending\''
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "shippingProvider" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "trackingNumber" TEXT'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "confirmedAt" TIMESTAMP(3)'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "processedAt" TIMESTAMP(3)'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "shippedAt" TIMESTAMP(3)'
+      );
+      await prisma.$executeRawUnsafe(
+        'ALTER TABLE "Order" ADD COLUMN IF NOT EXISTS "deliveredAt" TIMESTAMP(3)'
+      );
+
+      await prisma.$executeRawUnsafe(
         'ALTER TABLE "Account" ADD COLUMN IF NOT EXISTS "access_token" TEXT'
       );
       await prisma.$executeRawUnsafe(

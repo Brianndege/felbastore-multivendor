@@ -2,6 +2,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
 
 const prismaUnsafe = prisma as any;
 
@@ -27,6 +28,29 @@ type VendorOrderSummary = {
   };
   canUpdateStatus: boolean;
 };
+
+const VendorOrderSchema = z.object({
+  id: z.string().min(1),
+  orderNumber: z.string().min(1),
+  status: z.string().min(1),
+  shippingStatus: z.string().min(1),
+  trackingNumber: z.string().nullable().optional(),
+  shippingProvider: z.string().nullable().optional(),
+  trackingUrl: z.string().nullable().optional(),
+  estimatedDeliveryAt: z.date().nullable().optional(),
+  confirmationDueAt: z.date().nullable().optional(),
+  paymentStatus: z.string().min(1),
+  createdAt: z.date(),
+  totalAmount: z.number(),
+  vendorAmount: z.number(),
+  currency: z.string().min(1),
+  itemCount: z.number().int().nonnegative(),
+  customer: z.object({
+    name: z.string().min(1),
+    email: z.string(),
+  }),
+  canUpdateStatus: z.boolean(),
+});
 
 function normalizeLifecycleStatus(value: unknown, fallback = "pending"): string {
   const normalized = typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -117,14 +141,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const vendorItems = Array.isArray(order.orderItems)
           ? order.orderItems.filter((item: any) => item?.vendorId === vendorId)
           : [];
-        if (vendorItems.length === 0) {
-          skippedOrders += 1;
-          continue;
-        }
 
         const vendorAmount = vendorItems.reduce((sum: number, item: any) => sum + Number(item.price || 0) * Number(item.quantity || 0), 0);
         const currency = vendorItems[0]?.product?.currency || "KES";
-        const canUpdateStatus = order.orderItems.every((item: any) => item?.vendorId === vendorId);
+        const canUpdateStatus = Array.isArray(order.orderItems)
+          ? order.orderItems.every((item: any) => item?.vendorId === vendorId)
+          : false;
         const fulfillment = order.vendorFulfillments?.[0];
 
         const status = normalizeLifecycleStatus(fulfillment?.orderStatus, normalizeLifecycleStatus(order.status, "pending"));
@@ -133,7 +155,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           deriveShippingStatus(status)
         );
 
-        payload.push({
+        const mapped: VendorOrderSummary = {
           id: order.id,
           orderNumber: order.orderNumber,
           status,
@@ -150,11 +172,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           currency,
           itemCount: vendorItems.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0),
           customer: {
-            name: userById.get(order.userId)?.name || "Customer",
+            name: userById.get(order.userId)?.name || "Deleted User",
             email: userById.get(order.userId)?.email || "",
           },
           canUpdateStatus,
-        });
+        };
+
+        const parsed = VendorOrderSchema.safeParse(mapped);
+        if (!parsed.success) {
+          skippedOrders += 1;
+          console.error("Invalid vendor order payload shape:", {
+            orderId: order?.id,
+            vendorId,
+            issues: parsed.error.issues,
+          });
+          continue;
+        }
+
+        payload.push(parsed.data);
       } catch (rowError) {
         skippedOrders += 1;
         console.error("Error shaping vendor order row:", {
