@@ -149,3 +149,101 @@ export async function sendOtpEmail(email: string, code: string) {
     return { success: false };
   }
 }
+
+export async function sendOrderCreatedEmailToUser(input: {
+  email: string;
+  customerName?: string;
+  orderNumber: string;
+  amountLabel: string;
+}) {
+  if (!hasEmailConfig() || !transporter) {
+    return { success: false };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: EMAIL_FROM,
+      to: input.email,
+      subject: `Order received: #${input.orderNumber}`,
+      html: `
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+          <h1 style="color: #7c3aed;">Thanks for your order</h1>
+          <p>Hello ${input.customerName || "there"},</p>
+          <p>We have received your order <strong>#${input.orderNumber}</strong>.</p>
+          <p>Total: <strong>${input.amountLabel}</strong></p>
+          <p style="color: #666; font-size: 14px;">You can track this order from your account orders page.</p>
+        </div>
+      `,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error sending order created email to user:", error);
+    return { success: false };
+  }
+}
+
+export async function sendOrderCreatedEmailToVendor(input: {
+  email: string;
+  storeName?: string;
+  orderNumber: string;
+  itemSummary: string;
+}) {
+  if (!hasEmailConfig() || !transporter) {
+    return { success: false };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: EMAIL_FROM,
+      to: input.email,
+      subject: `New order: #${input.orderNumber}`,
+      html: `
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+          <h1 style="color: #7c3aed;">New order received</h1>
+          <p>Hello ${input.storeName || "Vendor"},</p>
+          <p>You have received a new order <strong>#${input.orderNumber}</strong>.</p>
+          <p>Items: ${input.itemSummary}</p>
+          <p style="color: #666; font-size: 14px;">Please log in to your vendor dashboard to review and process this order.</p>
+        </div>
+      `,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error sending order created email to vendor:", error);
+    return { success: false };
+  }
+}
+
+export async function sendOrderStatusEmailToUser(input: {
+  email: string;
+  customerName?: string;
+  orderNumber: string;
+  status: string;
+}) {
+  if (!hasEmailConfig() || !transporter) {
+    return { success: false };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: EMAIL_FROM,
+      to: input.email,
+      subject: `Order update: #${input.orderNumber}`,
+      html: `
+        <div style="max-width: 600px; margin: 0 auto; font-family: Arial, sans-serif;">
+          <h1 style="color: #7c3aed;">Order status updated</h1>
+          <p>Hello ${input.customerName || "there"},</p>
+          <p>Your order <strong>#${input.orderNumber}</strong> is now <strong>${input.status}</strong>.</p>
+          <p style="color: #666; font-size: 14px;">Check your orders page for the latest tracking details.</p>
+        </div>
+      `,
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error sending order status email:", error);
+    return { success: false };
+  }
+}
