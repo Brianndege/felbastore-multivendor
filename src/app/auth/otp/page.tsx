@@ -66,7 +66,27 @@ export default function OtpLoginPage() {
       const data = await response.json();
 
       if (response.status === 429 && data?.requiresCaptcha) {
-        toast.error("Too many OTP requests. Please wait and try again.");
+        setChallengeId("");
+        setCode("");
+        setStep("request");
+        setCooldown(Number(data?.retryAfterSeconds) || 60);
+        toast.error(`Too many OTP requests. Please wait ${Number(data?.retryAfterSeconds) || 60}s and try again.`);
+        return;
+      }
+
+      if (!response.ok) {
+        setChallengeId("");
+        setCode("");
+        setStep("request");
+        toast.error("Could not issue a valid OTP challenge. Please try again.");
+        return;
+      }
+
+      if (!data?.challengeId) {
+        setChallengeId("");
+        setCode("");
+        setStep("request");
+        toast.error("No valid code challenge was created. Please request a new code.");
         return;
       }
 
@@ -106,36 +126,55 @@ export default function OtpLoginPage() {
 
       if (result?.error) {
         if (result.error === "OTP_EXPIRED") {
+          setChallengeId("");
+          setCode("");
+          setStep("request");
           toast.error("OTP expired. Request a new code.");
           return;
         }
 
         if (result.error === "OTP_LOCKED") {
+          setChallengeId("");
+          setCode("");
+          setStep("request");
           toast.error("Too many failed attempts. Please wait before retrying.");
           return;
         }
 
         if (result.error === "OTP_RATE_LIMITED") {
+          setChallengeId("");
+          setCode("");
+          setStep("request");
           toast.error("Too many verification attempts. Please wait and try again.");
           return;
         }
 
         if (result.error === "OTP_CHALLENGE_MISMATCH") {
+          setChallengeId("");
+          setCode("");
+          setStep("request");
           toast.error("This code is no longer valid for the current session. Request a new code.");
           return;
         }
 
         if (result.error === "OTP_ACCOUNT_NOT_FOUND") {
+          setChallengeId("");
+          setCode("");
+          setStep("request");
           toast.error("No matching account was found for this code. Request a new code.");
           return;
         }
 
         if (result.error === "INVALID_OTP") {
+          setCode("");
           toast.error("The code is invalid for this session. Use the latest code or request a new one.");
           return;
         }
 
         if (result.error === "CredentialsSignin") {
+          setChallengeId("");
+          setCode("");
+          setStep("request");
           toast.error("Verification failed. Request a new code and try the latest one.");
           return;
         }

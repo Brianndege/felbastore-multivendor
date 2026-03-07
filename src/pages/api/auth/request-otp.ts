@@ -48,13 +48,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userAgent,
       metadata: { reason: "rate_limited" },
     });
-    return res.status(429).json({ message: GENERIC_OTP_MESSAGE, requiresCaptcha: true, challengeId: createRandomToken(12) });
+    return res.status(429).json({
+      message: GENERIC_OTP_MESSAGE,
+      requiresCaptcha: true,
+      challengeId: createRandomToken(12),
+      retryAfterSeconds: otpRequestLimit.retryAfterSeconds || 60,
+    });
   }
 
   if (otpRequestLimit.requiresCaptcha) {
     const captchaResult = await verifyCaptchaToken(captchaToken, ipAddress);
     if (!captchaResult.success) {
-      return res.status(429).json({ message: GENERIC_OTP_MESSAGE, requiresCaptcha: true, challengeId: createRandomToken(12) });
+      return res.status(429).json({
+        message: GENERIC_OTP_MESSAGE,
+        requiresCaptcha: true,
+        challengeId: createRandomToken(12),
+        retryAfterSeconds: 60,
+      });
     }
   }
 
