@@ -261,9 +261,42 @@ jobs:
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           set -o pipefail
+
+          has_successful_deploy_json() {
+            local log_file="$1"
+            node -e '
+              const fs = require("fs");
+              const file = process.argv[1];
+              const text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+              const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+
+              for (let i = lines.length - 1; i >= 0; i--) {
+                const line = lines[i];
+                if (!line.startsWith("{")) continue;
+
+                try {
+                  const parsed = JSON.parse(line);
+                  const deployId = parsed.deploy_id || parsed.id;
+                  const deployUrl = parsed.deploy_url || parsed.url || parsed.ssl_url || parsed.site_url;
+                  if (deployId || deployUrl) {
+                    process.exit(0);
+                  }
+                } catch {
+                  // Ignore non-JSON lines.
+                }
+              }
+
+              process.exit(1);
+            ' "$log_file"
+          }
+
           for attempt in 1 2; do
             echo "Starting Netlify production deploy (attempt ${attempt}/2)"
             if npx netlify deploy --build --prod --json 2>&1 | tee netlify-production-deploy.log; then
+              exit 0
+            fi
+            if has_successful_deploy_json netlify-production-deploy.log; then
+              echo "Netlify production deploy appears successful based on JSON output; continuing"
               exit 0
             fi
             if grep -E "Site deploy was successfully initiated|Site is live|Deploy complete|Website URL|deploy_url|deploy_id" netlify-production-deploy.log >/dev/null; then
@@ -273,7 +306,19 @@ jobs:
             echo "Netlify production deploy attempt ${attempt} failed"
             tail -n 200 netlify-production-deploy.log || true
             if [ "$attempt" -eq 2 ]; then
-              echo "Netlify production deploy failed after 2 attempts"
+              echo "Primary production deploy failed after 2 attempts; trying trigger fallback"
+              if npx netlify deploy --trigger --prod --json 2>&1 | tee netlify-production-trigger.log; then
+                exit 0
+              fi
+              if has_successful_deploy_json netlify-production-trigger.log; then
+                echo "Netlify production trigger appears successful based on JSON output; continuing"
+                exit 0
+              fi
+              if grep -E "Site deploy was successfully initiated|Site is live|Deploy complete|Website URL|deploy_url|deploy_id" netlify-production-trigger.log >/dev/null; then
+                echo "Netlify production trigger appears successful despite CLI non-zero exit; continuing"
+                exit 0
+              fi
+              echo "Netlify production deploy failed after build and trigger attempts"
               exit 1
             fi
             echo "Retrying in 10 seconds"
