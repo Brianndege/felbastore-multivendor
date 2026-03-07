@@ -60,6 +60,7 @@ export default function Header() {
   const router = useRouter();
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isMobileCategoriesOpen, setIsMobileCategoriesOpen] = useState(false);
   const [isDesktopCategoriesOpen, setIsDesktopCategoriesOpen] = useState(false);
   const [isTabletCategoriesOpen, setIsTabletCategoriesOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -70,6 +71,7 @@ export default function Header() {
   useEffect(() => {
     if (!isMobileMenuOpen) {
       document.body.style.overflow = "";
+      setIsMobileCategoriesOpen(false);
       return;
     }
 
@@ -104,6 +106,7 @@ export default function Header() {
 
   const closeMobileMenu = () => {
     setIsMobileMenuOpen(false);
+    setIsMobileCategoriesOpen(false);
     setIsDesktopCategoriesOpen(false);
     setIsTabletCategoriesOpen(false);
   };
@@ -559,7 +562,7 @@ export default function Header() {
             id="mobile-navigation"
             role="navigation"
             aria-label="Mobile navigation"
-            className={`relative ml-auto h-full w-full overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
+            className={`relative ml-auto h-full w-[92vw] max-w-md overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
               isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
             }`}
           >
@@ -574,7 +577,6 @@ export default function Header() {
               {[
                 { href: "/", label: "Home", icon: Home },
                 { href: "/products", label: "Shop", icon: ShoppingBag },
-                { href: "/categories", label: "Categories", icon: LayoutGrid },
                 { href: "/vendors", label: "Vendors", icon: Store },
                 { href: "/orders", label: "Orders", icon: Package },
                 { href: "/cart", label: "Cart", icon: ShoppingCart },
@@ -595,6 +597,54 @@ export default function Header() {
                   </li>
                 );
               })}
+
+              <li>
+                <button
+                  type="button"
+                  role="menuitem"
+                  aria-haspopup="menu"
+                  aria-expanded={isMobileCategoriesOpen}
+                  aria-controls="mobile-categories-accordion"
+                  className="flex min-h-[48px] w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm font-medium hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e16b22]"
+                  onClick={() => setIsMobileCategoriesOpen((prev) => !prev)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setIsMobileCategoriesOpen(false);
+                    }
+                  }}
+                >
+                  <span className="inline-flex items-center gap-3">
+                    <LayoutGrid className="h-4 w-4" />
+                    Categories
+                  </span>
+                  <ChevronDown className={`h-4 w-4 transition-transform ${isMobileCategoriesOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                <div
+                  id="mobile-categories-accordion"
+                  role="menu"
+                  aria-label="Mobile categories"
+                  className={`overflow-hidden pl-4 transition-[max-height,opacity] duration-300 ease-out ${
+                    isMobileCategoriesOpen ? "max-h-80 opacity-100" : "max-h-0 opacity-0"
+                  }`}
+                >
+                  <ul className="space-y-1 py-1">
+                    {CATEGORY_LINKS.map((item) => (
+                      <li key={item.href}>
+                        <Link
+                          href={item.href}
+                          role="menuitem"
+                          className="flex min-h-[48px] items-center rounded-md px-3 py-2 text-sm hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e16b22]"
+                          onClick={closeMobileMenu}
+                        >
+                          {item.label}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </li>
             </ul>
 
             {session?.user?.role === "vendor" && (
