@@ -66,7 +66,70 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          node -e "const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; const hasJwt = names.has('JWT_SECRET') || names.has('NEXTAUTH_SECRET'); if(!hasJwt) missing.push('JWT_SECRET|NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase) missing.push('NEXTAUTH_URL|APP_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_NEXTAUTH_URL'); if(missing.length){ console.error('Missing required Netlify env vars: '+missing.join(', ')); process.exit(1); } console.log('Netlify env preflight completed');"
+          node <<'NODE'
+          const { execSync } = require('child_process');
+
+          const raw = execSync('npx netlify env:list --json --context deploy-preview', {
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }).toString();
+          const parsed = JSON.parse(raw);
+
+          const names = new Set();
+
+          const collectFromRows = (rows) => {
+            if (!Array.isArray(rows)) return;
+            for (const row of rows) {
+              if (!row || typeof row !== 'object') continue;
+              const candidate = row.key || row.name || row.id;
+              if (typeof candidate === 'string' && candidate.length > 0) {
+                names.add(candidate);
+              }
+            }
+          };
+
+          if (Array.isArray(parsed)) {
+            collectFromRows(parsed);
+          }
+
+          if (parsed && typeof parsed === 'object') {
+            collectFromRows(parsed.variables);
+            collectFromRows(parsed.env);
+
+            // Some CLI versions return an object keyed by env var name.
+            for (const [key, value] of Object.entries(parsed)) {
+              if (typeof key === 'string' && /^[A-Z0-9_]+$/.test(key)) {
+                names.add(key);
+              }
+              if (Array.isArray(value)) {
+                collectFromRows(value);
+              }
+            }
+          }
+
+          const missing = [];
+          const hasJwt = names.has('JWT_SECRET') || names.has('NEXTAUTH_SECRET');
+          if (!hasJwt) missing.push('JWT_SECRET|NEXTAUTH_SECRET');
+
+          if (!(names.has('DATABASE_URL') || names.has('NETLIFY_DATABASE_URL'))) {
+            missing.push('DATABASE_URL|NETLIFY_DATABASE_URL');
+          }
+
+          const hasAppBase =
+            names.has('NEXTAUTH_URL') ||
+            names.has('APP_URL') ||
+            names.has('NEXT_PUBLIC_APP_URL') ||
+            names.has('NEXT_PUBLIC_NEXTAUTH_URL');
+          if (!hasAppBase) {
+            missing.push('NEXTAUTH_URL|APP_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_NEXTAUTH_URL');
+          }
+
+          if (missing.length) {
+            console.error('Missing required Netlify env vars: ' + missing.join(', '));
+            process.exit(1);
+          }
+
+          console.log('Netlify env preflight completed');
+          NODE
 
       - name: Deploy preview
         env:
@@ -127,7 +190,70 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          node -e "const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; const hasJwt = names.has('JWT_SECRET') || names.has('NEXTAUTH_SECRET'); if(!hasJwt) missing.push('JWT_SECRET|NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase) missing.push('NEXTAUTH_URL|APP_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_NEXTAUTH_URL'); if(missing.length){ console.error('Missing required Netlify env vars: '+missing.join(', ')); process.exit(1); } console.log('Netlify env preflight completed');"
+          node <<'NODE'
+          const { execSync } = require('child_process');
+
+          const raw = execSync('npx netlify env:list --json --context production', {
+            stdio: ['ignore', 'pipe', 'pipe'],
+          }).toString();
+          const parsed = JSON.parse(raw);
+
+          const names = new Set();
+
+          const collectFromRows = (rows) => {
+            if (!Array.isArray(rows)) return;
+            for (const row of rows) {
+              if (!row || typeof row !== 'object') continue;
+              const candidate = row.key || row.name || row.id;
+              if (typeof candidate === 'string' && candidate.length > 0) {
+                names.add(candidate);
+              }
+            }
+          };
+
+          if (Array.isArray(parsed)) {
+            collectFromRows(parsed);
+          }
+
+          if (parsed && typeof parsed === 'object') {
+            collectFromRows(parsed.variables);
+            collectFromRows(parsed.env);
+
+            // Some CLI versions return an object keyed by env var name.
+            for (const [key, value] of Object.entries(parsed)) {
+              if (typeof key === 'string' && /^[A-Z0-9_]+$/.test(key)) {
+                names.add(key);
+              }
+              if (Array.isArray(value)) {
+                collectFromRows(value);
+              }
+            }
+          }
+
+          const missing = [];
+          const hasJwt = names.has('JWT_SECRET') || names.has('NEXTAUTH_SECRET');
+          if (!hasJwt) missing.push('JWT_SECRET|NEXTAUTH_SECRET');
+
+          if (!(names.has('DATABASE_URL') || names.has('NETLIFY_DATABASE_URL'))) {
+            missing.push('DATABASE_URL|NETLIFY_DATABASE_URL');
+          }
+
+          const hasAppBase =
+            names.has('NEXTAUTH_URL') ||
+            names.has('APP_URL') ||
+            names.has('NEXT_PUBLIC_APP_URL') ||
+            names.has('NEXT_PUBLIC_NEXTAUTH_URL');
+          if (!hasAppBase) {
+            missing.push('NEXTAUTH_URL|APP_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_NEXTAUTH_URL');
+          }
+
+          if (missing.length) {
+            console.error('Missing required Netlify env vars: ' + missing.join(', '));
+            process.exit(1);
+          }
+
+          console.log('Netlify env preflight completed');
+          NODE
 
       - name: Deploy production
         env:
