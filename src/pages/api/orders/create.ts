@@ -12,6 +12,7 @@ import { formatCurrency } from "@/lib/currency";
 import { sendOrderCreatedEmailToUser, sendOrderCreatedEmailToVendor } from "@/lib/email";
 
 const VENDOR_CONFIRMATION_SLA_HOURS = 6;
+let orderEnumCompatibilityPromise: Promise<void> | null = null;
 
 const AddressSchema = z.object({
   address: z.string().optional(),
@@ -85,6 +86,52 @@ function isMissingWorkflowTableError(error: unknown) {
   }
 
   return false;
+}
+
+function isMissingEnumTypeError(error: unknown) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientUnknownRequestError) {
+    return /type\s+"public\.[^"]+"\s+does not exist/i.test(error.message || "");
+  }
+
+  if (error instanceof Error) {
+    return /type\s+"public\.[^"]+"\s+does not exist/i.test(error.message || "");
+  }
+
+  return false;
+}
+
+function ensureOrderEnumCompatibility() {
+  if (orderEnumCompatibilityPromise) {
+    return orderEnumCompatibilityPromise;
+  }
+
+  orderEnumCompatibilityPromise = (async () => {
+    try {
+      await prisma.$executeRawUnsafe(`
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrderStatus') THEN
+    CREATE TYPE "OrderStatus" AS ENUM ('PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'REFUNDED');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'OrderLifecycleStatus') THEN
+    CREATE TYPE "OrderLifecycleStatus" AS ENUM ('PENDING', 'CONFIRMED', 'PROCESSING', 'SHIPPED', 'IN_TRANSIT', 'DELIVERED', 'COMPLETED', 'CANCELLED', 'REFUNDED');
+  END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'ShippingLifecycleStatus') THEN
+    CREATE TYPE "ShippingLifecycleStatus" AS ENUM ('PENDING', 'LABEL_CREATED', 'SHIPPED', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'EXCEPTION');
+  END IF;
+END $$;
+      `);
+    } catch (error) {
+      // Allow request flow to continue; fallback handling below maps failures with clearer diagnostics.
+      console.warn("[orders/create] Failed to ensure order enum compatibility", {
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  })();
+
+  return orderEnumCompatibilityPromise;
 }
 
 async function runOptionalOrderWorkflowWrites(input: {
@@ -367,6 +414,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
+    await ensureOrderEnumCompatibility();
+
     const eligibility = await evaluateCheckoutEligibility({
       userId,
       address: {
@@ -623,6 +672,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
+
+    if (isMissingEnumTypeError(error)) {
+      return res.status(503).json({
+        error: "Order service schema is synchronizing. Please retry shortly.",
+        code: "DB_SCHEMA_SYNC_IN_PROGRESS",
+      });
+    }
     logPrismaError("orders/create", error, {
       userId,
       paymentMethod: normalizedPaymentMethod,

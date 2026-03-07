@@ -33,6 +33,7 @@ jest.mock("@/lib/outbox", () => ({
 jest.mock("@/lib/prisma", () => ({
   prisma: {
     $transaction: jest.fn(),
+    $executeRawUnsafe: jest.fn(),
     cartItem: {
       findMany: jest.fn(),
       deleteMany: jest.fn(),
@@ -117,6 +118,7 @@ describe("orders/create API", () => {
     (prismaMock.orderStatusAudit.createMany as jest.Mock).mockResolvedValue({ count: 1 });
     (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
     (prismaMock.vendor.findMany as jest.Mock).mockResolvedValue([]);
+    (prismaMock.$executeRawUnsafe as jest.Mock).mockResolvedValue(undefined);
     (prismaMock.product.updateMany as jest.Mock).mockResolvedValue({ count: 1 });
     (prismaMock.$transaction as jest.Mock).mockImplementation(async (callback: (tx: any) => Promise<unknown>) => {
       const tx = {
