@@ -4,6 +4,8 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import { deriveAggregateOrderStatus } from "@/lib/order-lifecycle";
 
+const prismaUnsafe = prisma as any;
+
 function safeLowercase(value: unknown, fallback: string): string {
   if (typeof value !== "string" || value.length === 0) {
     return fallback;
@@ -123,7 +125,7 @@ async function getOrder(
 
   try {
     // Find the order with its items
-    const order = await prisma.order.findUnique({
+    const order = await prismaUnsafe.order.findUnique({
       where: { id: orderId },
       include: {
         orderItems: {
@@ -173,7 +175,7 @@ async function getOrder(
       order.userId === session.user.id ||
       session.user.role === "admin" ||
       (session.user.role === "vendor" &&
-        order.orderItems.some(item => item.vendorId === session.user.id));
+        order.orderItems.some((item: any) => item.vendorId === session.user.id));
 
     if (!isAuthorized) {
       return res.status(403).json({ error: "Not authorized to view this order" });
@@ -186,7 +188,7 @@ async function getOrder(
   } catch (error) {
     if (isLifecycleSchemaError(error)) {
       try {
-        const legacyOrder = await prisma.order.findUnique({
+        const legacyOrder = await prismaUnsafe.order.findUnique({
           where: { id: orderId },
           include: {
             orderItems: {

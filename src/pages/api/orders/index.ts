@@ -4,6 +4,8 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import { deriveAggregateOrderStatus } from "@/lib/order-lifecycle";
 
+const prismaUnsafe = prisma as any;
+
 function safeLowercase(value: unknown, fallback: string): string {
   if (typeof value !== "string" || value.length === 0) {
     return fallback;
@@ -32,7 +34,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   if (req.method === "GET") {
     try {
-      const orders = await prisma.order.findMany({
+      const orders = await prismaUnsafe.order.findMany({
         where: { userId: session.user.id },
         include: {
           orderItems: {
@@ -63,14 +65,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
 
       return res.status(200).json(
-        orders.map((order) => ({
+        orders.map((order: any) => ({
           ...order,
           status: deriveAggregateOrderStatus(
             order.vendorFulfillments
-              .map((entry) => safeLowercase(entry.orderStatus, ""))
+              .map((entry: any) => safeLowercase(entry.orderStatus, ""))
               .filter(Boolean)
           ),
-          vendorFulfillments: order.vendorFulfillments.map((entry) => ({
+          vendorFulfillments: order.vendorFulfillments.map((entry: any) => ({
             id: entry.id,
             vendorId: entry.vendorId,
             vendorName: entry.vendor.storeName || entry.vendor.name,
@@ -86,7 +88,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     } catch (error) {
       if (isLifecycleSchemaError(error)) {
         try {
-          const legacyOrders = await prisma.order.findMany({
+          const legacyOrders = await prismaUnsafe.order.findMany({
             where: { userId: session.user.id },
             include: {
               orderItems: {
@@ -106,7 +108,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           });
 
           return res.status(200).json(
-            legacyOrders.map((order) => ({
+            legacyOrders.map((order: any) => ({
               ...order,
               vendorFulfillments: [],
               status: String(order.status || "pending").toLowerCase(),
