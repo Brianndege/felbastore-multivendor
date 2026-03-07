@@ -97,6 +97,37 @@ function toOptionalNumber(input: unknown): number | undefined {
   return undefined;
 }
 
+function sanitizeSelectedZoneIds(input: unknown): Record<string, string> | undefined {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const entries = Object.entries(input as Record<string, unknown>)
+    .map(([vendorId, zoneId]): [string, string | null] => {
+      if (typeof vendorId !== "string" || vendorId.trim().length === 0) {
+        return ["", null];
+      }
+      if (typeof zoneId !== "string") {
+        return ["", null];
+      }
+
+      const normalizedVendorId = vendorId.trim();
+      const normalizedZoneId = zoneId.trim();
+      if (!normalizedVendorId || !normalizedZoneId) {
+        return ["", null];
+      }
+
+      return [normalizedVendorId, normalizedZoneId];
+    })
+    .filter((entry): entry is [string, string] => Boolean(entry[0] && entry[1]));
+
+  if (!entries.length) {
+    return undefined;
+  }
+
+  return Object.fromEntries(entries);
+}
+
 async function runPostOrderSideEffects(input: {
   order: CreatedOrderWithItems;
   userId: string;
@@ -232,6 +263,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const { shippingAddress, billingAddress, paymentMethod, selectedZoneIds } = parsedBody.data;
+  const normalizedSelectedZoneIds = sanitizeSelectedZoneIds(selectedZoneIds);
   const normalizedPaymentMethod = typeof paymentMethod === "string" ? paymentMethod.toLowerCase() : "pending";
   const isPodOrder = normalizedPaymentMethod === "pod" || normalizedPaymentMethod === "pay_on_delivery";
 
@@ -248,7 +280,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         lat: toOptionalNumber(shippingAddress?.lat),
         lng: toOptionalNumber(shippingAddress?.lng),
       },
-      selectedZoneIds: typeof selectedZoneIds === "object" && selectedZoneIds !== null ? selectedZoneIds : undefined,
+      selectedZoneIds: normalizedSelectedZoneIds,
     });
 
     if (!eligibility.eligible) {
@@ -501,6 +533,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     }
 
+    if (
+      error instanceof Prisma.PrismaClientInitializationError ||
+      error instanceof Prisma.PrismaClientRustPanicError
+    ) {
+      return res.status(503).json({
+        error: "Database service is temporarily unavailable. Please retry shortly.",
+        code: "DB_UNAVAILABLE",
+      });
+    }
+
     logPrismaError("orders/create", error, {
       userId,
       paymentMethod: normalizedPaymentMethod,
@@ -511,6 +553,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       userId,
       paymentMethod: normalizedPaymentMethod,
       selectedZoneIdsType: typeof selectedZoneIds,
+      selectedZoneIdsKeys: normalizedSelectedZoneIds ? Object.keys(normalizedSelectedZoneIds).length : 0,
     });
     return res.status(500).json({ error: "Internal server error" });
   }

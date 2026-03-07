@@ -290,6 +290,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
   } catch (error) {
+    if (
+      error instanceof Prisma.PrismaClientInitializationError ||
+      error instanceof Prisma.PrismaClientRustPanicError
+    ) {
+      logDeepError("vendor/orders/db-unavailable", error, {
+        vendorId,
+        requestedStatus,
+      });
+      return res.status(503).json({
+        error: "Vendor order service is temporarily unavailable. Please retry shortly.",
+        code: "DB_UNAVAILABLE",
+      });
+    }
+
     logPrismaError("vendor/orders", error, {
       vendorId,
       requestedStatus,
