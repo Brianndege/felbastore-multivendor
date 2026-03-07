@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType, FocusEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -15,21 +16,56 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useSession, signOut } from "next-auth/react";
 import { useCart } from "@/contexts/CartContext";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import {
+  BarChart3,
+  ChevronDown,
+  Home,
+  LayoutGrid,
+  Menu,
+  Package,
+  Settings,
+  ShoppingBag,
+  ShoppingCart,
+  Store,
+  User,
+  Users,
+  X,
+} from "lucide-react";
+
+type HeaderLink = {
+  href: string;
+  label: string;
+  icon?: ComponentType<{ className?: string }>;
+};
+
+const PRIMARY_LINKS: HeaderLink[] = [
+  { href: "/", label: "Home", icon: Home },
+  { href: "/products", label: "Shop", icon: ShoppingBag },
+  { href: "/vendors", label: "Vendors", icon: Store },
+  { href: "/orders", label: "Orders", icon: Package },
+];
+
+const CATEGORY_LINKS: HeaderLink[] = [
+  { href: "/categories/electronics", label: "Electronics" },
+  { href: "/categories/fashion", label: "Fashion" },
+  { href: "/categories/home-garden", label: "Home & Garden" },
+  { href: "/categories/beauty-health", label: "Beauty & Health" },
+  { href: "/categories/sports-outdoors", label: "Sports & Outdoors" },
+  { href: "/categories/books-media", label: "Books & Media" },
+];
 
 export default function Header() {
   const { data: session, status } = useSession();
-  // Debug logging for session state
-  if (typeof window !== "undefined") {
-    // eslint-disable-next-line no-console
-    console.log("[Header] Session:", session);
-    // eslint-disable-next-line no-console
-    console.log("[Header] Auth status:", status);
-  }
   const { getCartCount } = useCart();
   const router = useRouter();
+  const [hasScrolled, setHasScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [isDesktopCategoriesOpen, setIsDesktopCategoriesOpen] = useState(false);
+  const [isTabletCategoriesOpen, setIsTabletCategoriesOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearch = useDebouncedValue(searchQuery, 350);
+  const desktopCategoryRef = useRef<HTMLDivElement | null>(null);
+  const tabletCategoryRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!isMobileMenuOpen) {
@@ -43,7 +79,34 @@ export default function Header() {
     };
   }, [isMobileMenuOpen]);
 
-  const closeMobileMenu = () => setIsMobileMenuOpen(false);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsDesktopCategoriesOpen(false);
+        setIsTabletCategoriesOpen(false);
+        setIsMobileMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  useEffect(() => {
+    const onScroll = () => {
+      setHasScrolled(window.scrollY > 8);
+    };
+
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  const closeMobileMenu = () => {
+    setIsMobileMenuOpen(false);
+    setIsDesktopCategoriesOpen(false);
+    setIsTabletCategoriesOpen(false);
+  };
   const trimmedDebouncedSearch = debouncedSearch.trim();
   const isSearching = searchQuery !== debouncedSearch;
 
@@ -63,50 +126,95 @@ export default function Header() {
   };
 
   const displayName = session?.user?.name || "User";
+  const cartCount = session?.user?.role === "user" ? getCartCount() : 0;
+
+  const accountHref = session?.user ? "/account" : "/auth/login";
+
+  const vendorMenu = useMemo(
+    () => [
+      { href: "/vendors/dashboard", label: "Vendor Dashboard", icon: Store },
+      { href: "/vendors/dashboard/products", label: "My Products", icon: LayoutGrid },
+      { href: "/vendors/dashboard/orders", label: "Orders", icon: Package },
+      { href: "/vendors/dashboard", label: "Analytics", icon: BarChart3 },
+    ],
+    []
+  );
+
+  const adminMenu = useMemo(
+    () => [
+      { href: "/admin/dashboard", label: "Admin Dashboard", icon: Settings },
+      { href: "/admin/vendors", label: "Vendor Approvals", icon: Users },
+      { href: "/admin/dashboard#products", label: "Product Approvals", icon: LayoutGrid },
+      { href: "/admin/security", label: "Platform Settings", icon: Settings },
+    ],
+    []
+  );
 
   const handleLogout = () => {
     void signOut({ callbackUrl: "/" });
   };
 
+  const onDesktopCategoryBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!desktopCategoryRef.current?.contains(event.relatedTarget as Node | null)) {
+      setIsDesktopCategoriesOpen(false);
+    }
+  };
+
+  const onTabletCategoryBlur = (event: FocusEvent<HTMLDivElement>) => {
+    if (!tabletCategoryRef.current?.contains(event.relatedTarget as Node | null)) {
+      setIsTabletCategoriesOpen(false);
+    }
+  };
+
+  const toggleDesktopCategories = () => {
+    setIsDesktopCategoriesOpen((prev) => !prev);
+  };
+
+  const onDesktopCategoryTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      toggleDesktopCategories();
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setIsDesktopCategoriesOpen(true);
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsDesktopCategoriesOpen(false);
+    }
+  };
+
+  const onTabletCategoryTriggerKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      setIsTabletCategoriesOpen((prev) => !prev);
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsTabletCategoriesOpen(false);
+    }
+  };
+
   return (
-    <header className="fixed inset-x-0 top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
+    <header
+      className={`sticky inset-x-0 top-0 z-50 border-b border-orange-100 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 ${
+        hasScrolled ? "shadow-[0_6px_18px_-10px_rgba(15,23,42,0.4)]" : ""
+      }`}
+    >
       <div className="container mx-auto px-4">
-        <div className="flex h-16 items-center justify-between gap-3">
+        <div className="flex h-16 items-center justify-between gap-3 lg:h-[72px]">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2" onClick={closeMobileMenu}>
+          <Link href="/" className="flex items-center gap-2" onClick={closeMobileMenu} aria-label="Felbastore Home">
             <span className="text-xl font-bold text-[#e16b22] sm:text-2xl">Felba</span>
             <span className="text-xl font-bold sm:text-2xl">store</span>
           </Link>
 
-          {/* Desktop Navigation */}
-          <nav className="mx-6 hidden flex-1 md:block">
-            <ul className="flex gap-6">
-              <li>
-                <Link href="/products" className="text-sm font-medium hover:text-[#e16b22]">
-                  All Products
-                </Link>
-              </li>
-              <li>
-                <Link href="/categories" className="text-sm font-medium hover:text-[#e16b22]">
-                  Categories
-                </Link>
-              </li>
-              <li>
-                <Link href="/vendors" className="text-sm font-medium hover:text-[#e16b22]">
-                  Vendors
-                </Link>
-              </li>
-              <li>
-                <Link href="/deals" className="text-sm font-medium hover:text-[#e16b22]">
-                  Today's Deals
-                </Link>
-              </li>
-            </ul>
-          </nav>
-
-          {/* Search Bar */}
-          <div className="hidden flex-1 lg:flex">
-            <div className="relative w-full max-w-sm">
+          <div className="mx-4 hidden flex-1 lg:flex lg:max-w-xl">
+            <div className="relative w-full">
               <Input
                 type="search"
                 placeholder="Search products..."
@@ -119,7 +227,7 @@ export default function Header() {
                   }
                 }}
                 aria-label="Search products"
-                className="pr-20"
+                className="h-11 rounded-full border-orange-200 pr-20 focus-visible:ring-[#e16b22]"
               />
               <Button
                 size="sm"
@@ -128,7 +236,7 @@ export default function Header() {
                 onClick={submitSearch}
                 aria-label="Submit product search"
               >
-                🔍
+                <ShoppingBag className="h-4 w-4" />
               </Button>
               {trimmedDebouncedSearch.length > 0 && (
                 <Button
@@ -145,22 +253,23 @@ export default function Header() {
             </div>
           </div>
 
-          {/* User Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Cart */}
-            <Link href="/cart" className="flex items-center gap-1 text-sm font-medium hover:text-[#e16b22]">
+            <Link
+              href="/cart"
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-md px-2 text-sm font-medium hover:bg-orange-50 hover:text-[#e16b22]"
+              aria-label={`Cart${cartCount > 0 ? ` with ${cartCount} items` : ""}`}
+            >
               <span className="relative">
-                🛒
-                {session?.user?.role === "user" && getCartCount() > 0 && (
+                <ShoppingCart className="h-5 w-5" />
+                {cartCount > 0 && (
                   <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#e16b22] text-[10px] text-white">
-                    {getCartCount()}
+                    {cartCount}
                   </span>
                 )}
               </span>
-              <span className="hidden sm:inline">Cart</span>
+              <span className="hidden lg:inline">Cart</span>
             </Link>
 
-            {/* Account */}
             {status === "loading" ? (
               <div className="hidden items-center gap-2 sm:flex">
                 <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-[#e16b22]" />
@@ -185,16 +294,13 @@ export default function Header() {
                           <Link href="/admin/dashboard">Admin Dashboard</Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
+                          <Link href="/admin/vendors">Vendor Approvals</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin/dashboard#products">Product Approvals</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
                           <Link href="/admin/security">Admin Security</Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href="/admin/dashboard#users">Manage Users</Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href="/admin/dashboard#vendors">Manage Vendors</Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                          <Link href="/admin/dashboard#products">Manage Products</Link>
                         </DropdownMenuItem>
                       </>
                     ) : session.user.role === "vendor" ? (
@@ -206,7 +312,10 @@ export default function Header() {
                           <Link href="/vendors/dashboard/products">My Products</Link>
                         </DropdownMenuItem>
                         <DropdownMenuItem asChild>
-                          <Link href="/vendors/dashboard">My Orders</Link>
+                          <Link href="/vendors/dashboard/orders">Orders</Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                          <Link href="/vendors/dashboard">Analytics</Link>
                         </DropdownMenuItem>
                       </>
                     ) : (
@@ -251,13 +360,149 @@ export default function Header() {
               aria-controls="mobile-navigation"
               onClick={() => setIsMobileMenuOpen((prev) => !prev)}
             >
-              {isMobileMenuOpen ? "✕" : "☰"}
+              {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>
           </div>
         </div>
 
-        {/* Mobile Search - Visible only on mobile */}
-        <div className="pb-3 lg:hidden">
+        <div className="hidden items-center justify-between border-t border-orange-100 py-2 md:flex">
+          <nav aria-label="Primary marketplace navigation" className="flex items-center gap-1" role="navigation">
+            {PRIMARY_LINKS.map((link) => {
+              const Icon = link.icon;
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className="inline-flex min-h-[44px] items-center gap-2 rounded-md px-3 text-sm font-medium text-slate-700 transition-colors hover:bg-orange-50 hover:text-[#e16b22] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e16b22]"
+                >
+                  {Icon ? <Icon className="h-4 w-4" /> : null}
+                  {link.label}
+                </Link>
+              );
+            })}
+
+            <div
+              ref={tabletCategoryRef}
+              className="relative lg:hidden"
+              onBlur={onTabletCategoryBlur}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-h-[44px] gap-2 rounded-md px-3 text-sm font-medium"
+                aria-haspopup="menu"
+                aria-expanded={isTabletCategoriesOpen}
+                aria-controls="tablet-categories-menu"
+                onClick={() => setIsTabletCategoriesOpen((prev) => !prev)}
+                onKeyDown={onTabletCategoryTriggerKeyDown}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Categories
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+
+              {isTabletCategoriesOpen && (
+                <div
+                  id="tablet-categories-menu"
+                  role="menu"
+                  aria-label="Tablet categories"
+                  className="absolute left-0 top-full z-50 mt-2 w-64 rounded-xl border bg-background p-2 shadow-xl"
+                >
+                  {CATEGORY_LINKS.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      role="menuitem"
+                      className="flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm hover:bg-orange-50"
+                      onClick={() => setIsTabletCategoriesOpen(false)}
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div
+              ref={desktopCategoryRef}
+              className="relative hidden lg:block"
+              onMouseEnter={() => setIsDesktopCategoriesOpen(true)}
+              onMouseLeave={() => setIsDesktopCategoriesOpen(false)}
+              onBlur={onDesktopCategoryBlur}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                className="min-h-[44px] gap-2 rounded-md px-3 text-sm font-medium"
+                aria-haspopup="menu"
+                aria-expanded={isDesktopCategoriesOpen}
+                aria-controls="desktop-categories-menu"
+                onFocus={() => setIsDesktopCategoriesOpen(true)}
+                onClick={toggleDesktopCategories}
+                onKeyDown={onDesktopCategoryTriggerKeyDown}
+              >
+                <LayoutGrid className="h-4 w-4" />
+                Categories
+                <ChevronDown className="h-4 w-4" />
+              </Button>
+
+              {isDesktopCategoriesOpen && (
+                <div
+                  id="desktop-categories-menu"
+                  role="menu"
+                  aria-label="Desktop categories"
+                  className="absolute left-0 top-full z-50 mt-2 w-[560px] rounded-2xl border bg-background p-4 shadow-2xl"
+                >
+                  <div className="grid grid-cols-2 gap-6">
+                    <div>
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Browse Categories</p>
+                      <div className="grid gap-1">
+                        {CATEGORY_LINKS.map((item) => (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            role="menuitem"
+                            className="flex min-h-[44px] items-center rounded-md px-3 py-2 text-sm hover:bg-orange-50"
+                            onClick={() => setIsDesktopCategoriesOpen(false)}
+                          >
+                            {item.label}
+                          </Link>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="rounded-xl bg-gradient-to-br from-orange-50 to-amber-100 p-4">
+                      <p className="text-sm font-semibold">Marketplace Highlights</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Find trusted vendors, track orders by store, and discover curated deals.</p>
+                      <div className="mt-3 grid gap-2">
+                        <Link href="/products/featured" className="rounded-md bg-white px-3 py-2 text-sm font-medium hover:bg-orange-100" onClick={() => setIsDesktopCategoriesOpen(false)}>
+                          Featured Products
+                        </Link>
+                        <Link href="/deals" className="rounded-md bg-white px-3 py-2 text-sm font-medium hover:bg-orange-100" onClick={() => setIsDesktopCategoriesOpen(false)}>
+                          Daily Deals
+                        </Link>
+                        <Link href="/vendors" className="rounded-md bg-white px-3 py-2 text-sm font-medium hover:bg-orange-100" onClick={() => setIsDesktopCategoriesOpen(false)}>
+                          Top Vendors
+                        </Link>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </nav>
+
+          <div className="hidden items-center gap-1 lg:flex">
+            <Link
+              href={accountHref}
+              className="inline-flex min-h-[44px] items-center gap-2 rounded-md px-3 text-sm font-medium text-slate-700 hover:bg-orange-50 hover:text-[#e16b22]"
+            >
+              <User className="h-4 w-4" />
+              Account
+            </Link>
+          </div>
+        </div>
+
+        <div className="pb-3 md:hidden">
           <div className="relative w-full">
             <Input
               type="search"
@@ -271,7 +516,7 @@ export default function Header() {
                 }
               }}
               aria-label="Search products"
-              className="pr-20"
+              className="h-11 rounded-full border-orange-200 pr-20 focus-visible:ring-[#e16b22]"
             />
             <Button
               size="sm"
@@ -280,7 +525,7 @@ export default function Header() {
               onClick={submitSearch}
               aria-label="Submit product search"
             >
-              🔍
+              <ShoppingBag className="h-4 w-4" />
             </Button>
             {trimmedDebouncedSearch.length > 0 && (
               <Button
@@ -297,91 +542,126 @@ export default function Header() {
           {isSearching && <p className="mt-1 text-xs text-muted-foreground">Searching...</p>}
         </div>
 
-        {isMobileMenuOpen && (
-          <>
-            <button
-              type="button"
-              aria-label="Close menu overlay"
-              className="fixed inset-0 z-40 bg-black/40 md:hidden"
-              onClick={closeMobileMenu}
-            />
-            <nav
-              id="mobile-navigation"
-              className="fixed right-0 top-0 z-50 h-full w-[85vw] max-w-sm overflow-y-auto border-l bg-background p-4 shadow-xl md:hidden"
-            >
-              <div className="mb-4 flex items-center justify-between">
-                <p className="text-lg font-semibold">Menu</p>
-                <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" onClick={closeMobileMenu}>
-                  ✕
-                </Button>
-              </div>
+        <div
+          className={`fixed inset-0 z-[60] transition-opacity duration-300 md:hidden ${
+            isMobileMenuOpen ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"
+          }`}
+          aria-hidden={!isMobileMenuOpen}
+        >
+          <button
+            type="button"
+            aria-label="Close menu overlay"
+            className="absolute inset-0 bg-black/45"
+            onClick={closeMobileMenu}
+          />
 
-              <ul className="space-y-2">
-                <li>
-                  <Link href="/products" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                    All Products
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/categories" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                    Categories
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/vendors" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                    Vendors
-                  </Link>
-                </li>
-                <li>
-                  <Link href="/deals" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                    Today's Deals
-                  </Link>
-                </li>
-                {session?.user?.role === "admin" && (
-                  <>
-                    <li>
-                      <Link href="/admin/dashboard" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                        Admin Dashboard
-                      </Link>
-                    </li>
-                    <li>
-                      <Link href="/admin/security" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                        Admin Security
-                      </Link>
-                    </li>
-                  </>
-                )}
-                {session?.user?.role === "vendor" && (
-                  <li>
-                    <Link href="/vendors/dashboard" className="block rounded px-3 py-3 text-sm font-medium hover:bg-muted" onClick={closeMobileMenu}>
-                      Vendor Dashboard
+          <nav
+            id="mobile-navigation"
+            role="navigation"
+            aria-label="Mobile navigation"
+            className={`relative ml-auto h-full w-full overflow-y-auto bg-background px-4 pb-8 pt-5 shadow-2xl transition-transform duration-300 ease-out ${
+              isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
+            }`}
+          >
+            <div className="mb-4 flex items-center justify-between border-b border-orange-100 pb-3">
+              <p className="text-lg font-semibold">Menu</p>
+              <Button variant="ghost" size="sm" className="min-h-[44px] min-w-[44px]" onClick={closeMobileMenu}>
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+
+            <ul className="space-y-1" role="menu" aria-label="Primary mobile links">
+              {[
+                { href: "/", label: "Home", icon: Home },
+                { href: "/products", label: "Shop", icon: ShoppingBag },
+                { href: "/categories", label: "Categories", icon: LayoutGrid },
+                { href: "/vendors", label: "Vendors", icon: Store },
+                { href: "/orders", label: "Orders", icon: Package },
+                { href: "/cart", label: "Cart", icon: ShoppingCart },
+                { href: accountHref, label: "Account", icon: User },
+              ].map((link) => {
+                const Icon = link.icon;
+                return (
+                  <li key={link.href + link.label}>
+                    <Link
+                      href={link.href}
+                      role="menuitem"
+                      className="flex min-h-[48px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-orange-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#e16b22]"
+                      onClick={closeMobileMenu}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {link.label}
                     </Link>
                   </li>
-                )}
-              </ul>
+                );
+              })}
+            </ul>
 
-              {!session?.user && (
-                <div className="mt-6 grid gap-2">
-                  <Button asChild variant="outline" className="w-full" onClick={closeMobileMenu}>
-                    <Link href="/auth/login">Login</Link>
-                  </Button>
-                  <Button asChild className="w-full" onClick={closeMobileMenu}>
-                    <Link href="/auth/register">Register</Link>
-                  </Button>
+            {session?.user?.role === "vendor" && (
+              <div className="mt-5 rounded-xl border border-orange-100 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Vendor Tools</p>
+                <div className="space-y-1" role="menu" aria-label="Vendor links">
+                  {vendorMenu.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href + item.label}
+                        href={item.href}
+                        role="menuitem"
+                        className="flex min-h-[48px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-orange-50"
+                        onClick={closeMobileMenu}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
                 </div>
-              )}
+              </div>
+            )}
 
-              {session?.user && (
-                <div className="mt-6 grid gap-2">
-                  <p className="px-3 text-sm text-muted-foreground">Welcome, {displayName}</p>
-                  <Button variant="outline" className="w-full" onClick={handleLogout}>
-                    Logout
-                  </Button>
+            {session?.user?.role === "admin" && (
+              <div className="mt-5 rounded-xl border border-orange-100 p-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Admin Tools</p>
+                <div className="space-y-1" role="menu" aria-label="Admin links">
+                  {adminMenu.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <Link
+                        key={item.href + item.label}
+                        href={item.href}
+                        role="menuitem"
+                        className="flex min-h-[48px] items-center gap-3 rounded-md px-3 py-2 text-sm font-medium hover:bg-orange-50"
+                        onClick={closeMobileMenu}
+                      >
+                        <Icon className="h-4 w-4" />
+                        {item.label}
+                      </Link>
+                    );
+                  })}
                 </div>
-              )}
-            </nav>
-          </>
-        )}
+              </div>
+            )}
+
+            {!session?.user ? (
+              <div className="mt-6 grid gap-2 border-t border-orange-100 pt-4">
+                <Button asChild variant="outline" className="min-h-[48px] w-full" onClick={closeMobileMenu}>
+                  <Link href="/auth/login">Login</Link>
+                </Button>
+                <Button asChild className="min-h-[48px] w-full" onClick={closeMobileMenu}>
+                  <Link href="/auth/register">Register</Link>
+                </Button>
+              </div>
+            ) : (
+              <div className="mt-6 grid gap-2 border-t border-orange-100 pt-4">
+                <p className="px-3 text-sm text-muted-foreground">Welcome, {displayName}</p>
+                <Button variant="outline" className="min-h-[48px] w-full" onClick={handleLogout}>
+                  Logout
+                </Button>
+              </div>
+            )}
+          </nav>
+        </div>
       </div>
     </header>
   );

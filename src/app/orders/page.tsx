@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "sonner";
+import { formatCurrency } from "@/lib/currency";
 
 // Status badge styling
 const getStatusColor = (status: string) => {
@@ -47,6 +48,7 @@ interface OrderItem {
     id: string;
     name: string;
     images: string;
+    currency?: string;
     vendor: {
       id: string;
       name: string;
@@ -63,6 +65,34 @@ interface Order {
   totalAmount: number;
   createdAt: string;
   orderItems: OrderItem[];
+}
+
+function parseProductImages(images: unknown): string[] {
+  if (Array.isArray(images)) {
+    return images.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+  }
+
+  if (typeof images === "string") {
+    const trimmed = images.trim();
+    if (!trimmed) {
+      return [];
+    }
+
+    if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) {
+      return [trimmed];
+    }
+
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((entry): entry is string => typeof entry === "string" && entry.length > 0);
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
 }
 
 export default function OrdersPage() {
@@ -176,9 +206,7 @@ export default function OrdersPage() {
                     <div className="space-y-4">
                       {/* Order items summary - show first 2 items plus count if more */}
                       {order.orderItems.slice(0, 2).map((item) => {
-                        const images = typeof item.product?.images === 'string'
-                          ? JSON.parse(item.product.images || '[]')
-                          : item.product?.images || [];
+                        const images = parseProductImages(item.product?.images);
 
                         return (
                           <div key={item.id} className="flex items-start gap-4">
@@ -194,9 +222,9 @@ export default function OrdersPage() {
                                 {item.productName || item.product?.name}
                               </h4>
                               <p className="text-sm text-gray-500">
-                                Qty: {item.quantity} × ${(typeof item.price === 'number'
+                                Qty: {item.quantity} × {formatCurrency((typeof item.price === 'number'
                                   ? item.price
-                                  : Number(item.price)).toFixed(2)}
+                                  : Number(item.price)), item.product?.currency || "KES")}
                               </p>
                               {item.product?.vendor && (
                                 <p className="text-xs text-gray-500">
@@ -206,9 +234,9 @@ export default function OrdersPage() {
                             </div>
                             <div className="text-right">
                               <span className="font-medium">
-                                ${((typeof item.price === 'number'
+                                {formatCurrency(((typeof item.price === 'number'
                                   ? item.price
-                                  : Number(item.price)) * item.quantity).toFixed(2)}
+                                  : Number(item.price)) * item.quantity), item.product?.currency || "KES")}
                               </span>
                             </div>
                           </div>
@@ -228,9 +256,10 @@ export default function OrdersPage() {
                       <div className="flex justify-between">
                         <span className="font-semibold">Total</span>
                         <span className="font-bold">
-                          ${(typeof order.totalAmount === 'number'
-                            ? order.totalAmount
-                            : Number(order.totalAmount)).toFixed(2)}
+                          {formatCurrency(
+                            (typeof order.totalAmount === 'number' ? order.totalAmount : Number(order.totalAmount)),
+                            order.orderItems?.[0]?.product?.currency || "KES"
+                          )}
                         </span>
                       </div>
                     </div>

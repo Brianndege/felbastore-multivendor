@@ -1,9 +1,9 @@
 name: Netlify Deploy
 
 on:
+  # Run on every branch push so non-main branches can produce preview deploys.
   push:
     branches:
-      - main
       - "**"
   pull_request:
   workflow_dispatch:
@@ -11,7 +11,7 @@ on:
       deploy_target:
         description: "Target deploy to run"
         required: true
-        default: "production"
+        default: production
         type: choice
         options:
           - production
@@ -21,31 +21,54 @@ concurrency:
   group: netlify-deploy-${{ github.ref }}
   cancel-in-progress: true
 
+# Least privilege default for all jobs.
+permissions:
+  contents: read
+
+env:
+  # Explicit Node version for reproducible installs/builds.
+  NODE_VERSION: "20"
+
 jobs:
   deploy-preview:
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'preview')
+    name: Deploy Preview
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref != 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'preview')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
+        # Standard stable major tag.
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      - name: Validate required Netlify secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ] || [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "Missing NETLIFY_AUTH_TOKEN or NETLIFY_SITE_ID secret"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate Netlify Site Environment (Preview)
+      - name: Validate Netlify site environment (preview)
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           node -e "const {execSync}=require('child_process'); try { const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; if(!names.has('NEXTAUTH_SECRET')) missing.push('NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); if(missing.length){ console.warn('Warning: missing critical Netlify env vars: '+missing.join(', ')); } const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase){ console.warn('Warning: no NEXTAUTH_URL/APP_URL/NEXT_PUBLIC_APP_URL/NEXT_PUBLIC_NEXTAUTH_URL found; some auth/admin links may fail in production'); } console.log('Netlify env preflight completed'); } catch (error) { console.warn('Warning: Netlify env preflight skipped due to parser/CLI error:', error?.message || error); }"
 
-      - name: Deploy Preview
+      - name: Deploy preview
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -71,29 +94,42 @@ jobs:
           done
 
   deploy-production:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
+    name: Deploy Production
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
+
+      - name: Validate required Netlify secrets
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          if [ -z "$NETLIFY_AUTH_TOKEN" ] || [ -z "$NETLIFY_SITE_ID" ]; then
+            echo "Missing NETLIFY_AUTH_TOKEN or NETLIFY_SITE_ID secret"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Validate Netlify Site Environment (Production)
+      - name: Validate Netlify site environment (production)
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
           node -e "const {execSync}=require('child_process'); try { const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; if(!names.has('NEXTAUTH_SECRET')) missing.push('NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); if(missing.length){ console.warn('Warning: missing critical Netlify env vars: '+missing.join(', ')); } const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase){ console.warn('Warning: no NEXTAUTH_URL/APP_URL/NEXT_PUBLIC_APP_URL/NEXT_PUBLIC_NEXTAUTH_URL found; some auth/admin links may fail in production'); } console.log('Netlify env preflight completed'); } catch (error) { console.warn('Warning: Netlify env preflight skipped due to parser/CLI error:', error?.message || error); }"
 
-      - name: Deploy Production
+      - name: Deploy production
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
@@ -119,17 +155,20 @@ jobs:
           done
 
   smoke-auth-production:
-    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
+    name: Production Auth Smoke
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_dispatch' && inputs.deploy_target == 'production')
     needs: deploy-production
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
       - name: Install dependencies

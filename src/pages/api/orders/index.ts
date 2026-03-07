@@ -2,6 +2,26 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
+import { deriveAggregateOrderStatus } from "@/lib/order-lifecycle";
+
+function safeLowercase(value: unknown, fallback: string): string {
+  if (typeof value !== "string" || value.length === 0) {
+    return fallback;
+  }
+
+  return value.toLowerCase();
+}
+
+function isLifecycleSchemaError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return (
+    message.includes("ordervendorfulfillment") ||
+    message.includes("orderstatusaudit") ||
+    message.includes("the table") ||
+    message.includes("does not exist") ||
+    message.includes("unknown field")
+  );
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const session = await getServerSession(req, res, authOptions);
@@ -17,17 +37,86 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         include: {
           orderItems: {
             include: {
-              vendor: {
-                select: { name: true, storeName: true }
+              product: {
+                select: {
+                  currency: true,
+                  vendor: {
+                    select: { name: true, storeName: true },
+                  },
+                },
               }
             }
-          }
+          },
+          vendorFulfillments: {
+            include: {
+              vendor: {
+                select: {
+                  id: true,
+                  name: true,
+                  storeName: true,
+                },
+              },
+            },
+          },
         },
         orderBy: { createdAt: "desc" }
       });
 
-      return res.status(200).json(orders);
+      return res.status(200).json(
+        orders.map((order) => ({
+          ...order,
+          status: deriveAggregateOrderStatus(
+            order.vendorFulfillments
+              .map((entry) => safeLowercase(entry.orderStatus, ""))
+              .filter(Boolean)
+          ),
+          vendorFulfillments: order.vendorFulfillments.map((entry) => ({
+            id: entry.id,
+            vendorId: entry.vendorId,
+            vendorName: entry.vendor.storeName || entry.vendor.name,
+            orderStatus: safeLowercase(entry.orderStatus, "pending"),
+            shippingStatus: safeLowercase(entry.shippingStatus, "pending"),
+            trackingNumber: entry.trackingNumber,
+            shippingProvider: entry.shippingProvider,
+            trackingUrl: entry.trackingUrl,
+            estimatedDeliveryAt: entry.estimatedDeliveryAt,
+          })),
+        }))
+      );
     } catch (error) {
+      if (isLifecycleSchemaError(error)) {
+        try {
+          const legacyOrders = await prisma.order.findMany({
+            where: { userId: session.user.id },
+            include: {
+              orderItems: {
+                include: {
+                  product: {
+                    select: {
+                      currency: true,
+                      vendor: {
+                        select: { name: true, storeName: true },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            orderBy: { createdAt: "desc" },
+          });
+
+          return res.status(200).json(
+            legacyOrders.map((order) => ({
+              ...order,
+              vendorFulfillments: [],
+              status: String(order.status || "pending").toLowerCase(),
+            }))
+          );
+        } catch (legacyError) {
+          console.error("Error fetching orders (legacy fallback):", legacyError);
+        }
+      }
+
       console.error("Error fetching orders:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
