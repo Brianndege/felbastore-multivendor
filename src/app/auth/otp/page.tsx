@@ -130,7 +130,17 @@ export default function OtpLoginPage() {
           return;
         }
 
-        toast.error("Invalid or expired code. Request a new code and try again.");
+        if (result.error === "INVALID_OTP") {
+          toast.error("The code is invalid for this session. Use the latest code or request a new one.");
+          return;
+        }
+
+        if (result.error === "CredentialsSignin") {
+          toast.error("Verification failed. Request a new code and try the latest one.");
+          return;
+        }
+
+        toast.error(`Verification failed (${result.error}). Request a new code and try again.`);
         return;
       }
 
