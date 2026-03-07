@@ -50,7 +50,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(401).json({ error: "Unauthorized" });
   }
 
-  const vendorId = session.user.id;
+  const vendorId = typeof session.user.id === "string" ? session.user.id.trim() : "";
+  if (!vendorId) {
+    return res.status(400).json({
+      error: "Invalid vendor session",
+      code: "INVALID_VENDOR_SESSION",
+    });
+  }
+
   const requestedStatus = typeof req.query.status === "string" ? req.query.status.trim().toLowerCase() : "";
 
   try {
@@ -64,12 +71,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       orderBy: { createdAt: "desc" },
       include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-          },
-        },
         orderItems: {
           include: {
             product: {
@@ -86,6 +87,27 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
       take: 100,
     });
+
+    const userIds = Array.from(
+      new Set(
+        orders
+          .map((order: any) => (typeof order?.userId === "string" ? order.userId : ""))
+          .filter((id: string) => id.length > 0)
+      )
+    );
+
+    const users = userIds.length
+      ? await prisma.user.findMany({
+          where: { id: { in: userIds } },
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        })
+      : [];
+
+    const userById = new Map(users.map((user) => [user.id, user]));
 
     const payload: VendorOrderSummary[] = [];
     let skippedOrders = 0;
@@ -128,8 +150,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           currency,
           itemCount: vendorItems.reduce((sum: number, item: any) => sum + Number(item.quantity || 0), 0),
           customer: {
-            name: order.user?.name || "Customer",
-            email: order.user?.email || "",
+            name: userById.get(order.userId)?.name || "Customer",
+            email: userById.get(order.userId)?.email || "",
           },
           canUpdateStatus,
         });
@@ -160,6 +182,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       requestedStatus,
       reason: error instanceof Error ? error.message : "unknown_vendor_orders_error",
     });
-    return res.status(500).json({ error: "Failed to fetch vendor orders" });
+    return res.status(500).json({
+      error: "Failed to fetch vendor orders",
+      code: "VENDOR_ORDERS_FETCH_FAILED",
+    });
   }
 }
