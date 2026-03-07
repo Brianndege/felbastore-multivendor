@@ -993,9 +993,23 @@ function shouldRunAuthSchemaGuard(req: NextApiRequest) {
   return true;
 }
 
+async function runAuthSchemaGuardBestEffort() {
+  try {
+    // Avoid blocking auth routes indefinitely when DB is slow/unavailable.
+    await Promise.race([
+      ensureAuthSchemaCompatibility(),
+      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+    ]);
+  } catch (error) {
+    logger.warn("[NextAuth] Auth schema guard skipped due to runtime failure", {
+      reason: error instanceof Error ? error.message : "unknown_auth_schema_guard_error",
+    });
+  }
+}
+
 export default async function authHandler(req: NextApiRequest, res: NextApiResponse) {
   if (shouldRunAuthSchemaGuard(req)) {
-    await ensureAuthSchemaCompatibility();
+    await runAuthSchemaGuardBestEffort();
   }
   return nextAuthHandler(req, res);
 }

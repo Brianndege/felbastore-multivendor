@@ -19,6 +19,18 @@ const adminRouteRateLimitStore = new Map<string, RateLimitEntry>();
 const GOOGLE_CALLBACK_REPLAY_WINDOW_MS = 5 * 60_000;
 const GOOGLE_CALLBACK_CODE_COOKIE = "__gauth_code_seen";
 
+async function safeGetToken(request: NextRequest) {
+  try {
+    return await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  } catch (error) {
+    console.warn("[middleware] Failed to parse NextAuth token", {
+      path: request.nextUrl.pathname,
+      reason: error instanceof Error ? error.message : "unknown_token_error",
+    });
+    return null;
+  }
+}
+
 function getRateLimitStore() {
   return edgeApiRateLimitStore;
 }
@@ -181,7 +193,7 @@ export async function middleware(request: NextRequest) {
 
       if (oauthCode) {
         if (cookieSeenCode === oauthCode) {
-          const callbackToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+          const callbackToken = await safeGetToken(request);
 
           if (callbackToken?.role === "admin") {
             return NextResponse.redirect(new URL("/admin/dashboard", request.url));
@@ -206,7 +218,7 @@ export async function middleware(request: NextRequest) {
         googleCallbackCodeForCookie = oauthCode;
 
         if (previousSeenAt && now - previousSeenAt <= GOOGLE_CALLBACK_REPLAY_WINDOW_MS) {
-          const callbackToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+          const callbackToken = await safeGetToken(request);
 
           if (callbackToken?.role === "admin") {
             return NextResponse.redirect(new URL("/admin/dashboard", request.url));
@@ -250,7 +262,7 @@ export async function middleware(request: NextRequest) {
       || pathname === "/api/admin/browser/generate-password-link"
       || pathname === "/api/admin/browser/generate-login-bundle";
     if (pathname.startsWith("/api/admin/") && !isAdminBootstrapEndpoint) {
-      const apiToken = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+      const apiToken = await safeGetToken(request);
       const adminSessionExpiry = apiToken?.adminSessionExpiresAt ? new Date(String(apiToken.adminSessionExpiresAt)).getTime() : 0;
       const hasActiveAdminSession = Boolean(
         apiToken
@@ -317,7 +329,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(httpsUrl, 308);
   }
 
-  const token = await getToken({ req: request, secret: process.env.NEXTAUTH_SECRET });
+  const token = await safeGetToken(request);
 
   if (
     pathname === "/auth/login" ||
