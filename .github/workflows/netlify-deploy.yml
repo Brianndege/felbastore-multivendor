@@ -66,7 +66,7 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          node -e "const {execSync}=require('child_process'); try { const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; if(!names.has('NEXTAUTH_SECRET')) missing.push('NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); if(missing.length){ console.warn('Warning: missing critical Netlify env vars: '+missing.join(', ')); } const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase){ console.warn('Warning: no NEXTAUTH_URL/APP_URL/NEXT_PUBLIC_APP_URL/NEXT_PUBLIC_NEXTAUTH_URL found; some auth/admin links may fail in production'); } console.log('Netlify env preflight completed'); } catch (error) { console.warn('Warning: Netlify env preflight skipped due to parser/CLI error:', error?.message || error); }"
+          node -e "const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; const hasJwt = names.has('JWT_SECRET') || names.has('NEXTAUTH_SECRET'); if(!hasJwt) missing.push('JWT_SECRET|NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase) missing.push('NEXTAUTH_URL|APP_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_NEXTAUTH_URL'); if(missing.length){ console.error('Missing required Netlify env vars: '+missing.join(', ')); process.exit(1); } console.log('Netlify env preflight completed');"
 
       - name: Deploy preview
         env:
@@ -76,10 +76,10 @@ jobs:
           set -o pipefail
           for attempt in 1 2; do
             echo "Starting Netlify preview deploy (attempt ${attempt}/2)"
-            if npx netlify deploy --build --json --debug 2>&1 | tee netlify-preview-deploy.log; then
+            if npx netlify deploy --build --json 2>&1 | tee netlify-preview-deploy.log; then
               exit 0
             fi
-            if grep -E "Site deploy was successfully initiated|Site is live" netlify-preview-deploy.log >/dev/null; then
+            if grep -E "Site deploy was successfully initiated|Site is live|Deploy complete|Website Draft URL|deploy_url|deploy_id" netlify-preview-deploy.log >/dev/null; then
               echo "Netlify preview deploy appears successful despite CLI non-zero exit; continuing"
               exit 0
             fi
@@ -127,7 +127,7 @@ jobs:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
         run: |
-          node -e "const {execSync}=require('child_process'); try { const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; if(!names.has('NEXTAUTH_SECRET')) missing.push('NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); if(missing.length){ console.warn('Warning: missing critical Netlify env vars: '+missing.join(', ')); } const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase){ console.warn('Warning: no NEXTAUTH_URL/APP_URL/NEXT_PUBLIC_APP_URL/NEXT_PUBLIC_NEXTAUTH_URL found; some auth/admin links may fail in production'); } console.log('Netlify env preflight completed'); } catch (error) { console.warn('Warning: Netlify env preflight skipped due to parser/CLI error:', error?.message || error); }"
+          node -e "const {execSync}=require('child_process'); const raw=execSync('npx netlify env:list --json',{stdio:['ignore','pipe','pipe']}).toString(); const parsed=JSON.parse(raw); const rows=Array.isArray(parsed)?parsed:Array.isArray(parsed.variables)?parsed.variables:Array.isArray(parsed.env)?parsed.env:Object.values(parsed||{}).find(Array.isArray)||[]; const names=new Set(rows.map((r)=>r?.key||r?.name||r?.id).filter(Boolean)); const missing=[]; const hasJwt = names.has('JWT_SECRET') || names.has('NEXTAUTH_SECRET'); if(!hasJwt) missing.push('JWT_SECRET|NEXTAUTH_SECRET'); if(!(names.has('DATABASE_URL')||names.has('NETLIFY_DATABASE_URL'))) missing.push('DATABASE_URL|NETLIFY_DATABASE_URL'); const hasAppBase = names.has('NEXTAUTH_URL')||names.has('APP_URL')||names.has('NEXT_PUBLIC_APP_URL')||names.has('NEXT_PUBLIC_NEXTAUTH_URL'); if(!hasAppBase) missing.push('NEXTAUTH_URL|APP_URL|NEXT_PUBLIC_APP_URL|NEXT_PUBLIC_NEXTAUTH_URL'); if(missing.length){ console.error('Missing required Netlify env vars: '+missing.join(', ')); process.exit(1); } console.log('Netlify env preflight completed');"
 
       - name: Deploy production
         env:
@@ -137,10 +137,10 @@ jobs:
           set -o pipefail
           for attempt in 1 2; do
             echo "Starting Netlify production deploy (attempt ${attempt}/2)"
-            if npx netlify deploy --build --prod --json --debug 2>&1 | tee netlify-production-deploy.log; then
+            if npx netlify deploy --build --prod --json 2>&1 | tee netlify-production-deploy.log; then
               exit 0
             fi
-            if grep -E "Site deploy was successfully initiated|Site is live" netlify-production-deploy.log >/dev/null; then
+            if grep -E "Site deploy was successfully initiated|Site is live|Deploy complete|Website URL|deploy_url|deploy_id" netlify-production-deploy.log >/dev/null; then
               echo "Netlify production deploy appears successful despite CLI non-zero exit; continuing"
               exit 0
             fi
