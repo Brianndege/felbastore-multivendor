@@ -9,6 +9,7 @@ export type UnifiedProductCard = {
   description: string;
   image: string;
   price: number;
+  currency: string;
   category: string;
   vendorLabel: string;
   rating?: number;
@@ -41,6 +42,7 @@ export async function getUnifiedMarketplaceFeed(options?: { threshold?: number; 
     description: product.description,
     image: product.images[0] || "",
     price: Number(product.price),
+    currency: product.currency || "KES",
     category: product.category,
     vendorLabel: product.vendor?.storeName || product.vendor?.name || "Marketplace Vendor",
     rating: product.avgRating ? Number(product.avgRating) : undefined,
@@ -65,6 +67,7 @@ export async function getUnifiedMarketplaceFeed(options?: { threshold?: number; 
       description: product.description,
       image: product.imageUrl,
       price: Number(product.price),
+      currency: product.currency || "USD",
       category: product.category,
       vendorLabel: "External Store",
       affiliateNetwork: product.affiliateNetwork,

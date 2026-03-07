@@ -19,8 +19,8 @@ const nextConfig = {
     removeConsole: process.env.NODE_ENV === 'production' && !isNetlifyBuild,
   },
   webpack: (config, { dev }) => {
-    if (!dev) {
-      // Temporary workaround for Next 15.5.x minifier crash on this environment.
+    if (!dev && process.env.DISABLE_NEXT_MINIFY === 'true') {
+      // Fallback switch for environments that still hit minifier crashes.
       config.optimization = {
         ...config.optimization,
         minimize: false,

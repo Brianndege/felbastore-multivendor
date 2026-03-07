@@ -49,6 +49,7 @@
         "npm:eslint@^8.57.1",
         "npm:express-rate-limit@^8.2.1",
         "npm:formidable@^3.5.4",
+        "npm:google-auth-library@^10.6.1",
         "npm:jest@^30.2.0",
         "npm:lucide-react@0.475",
         "npm:micro@^10.0.1",

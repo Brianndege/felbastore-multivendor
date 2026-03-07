@@ -39,6 +39,21 @@ jest.mock("@/lib/prisma", () => ({
     order: {
       create: jest.fn(),
     },
+    notification: {
+      create: jest.fn(),
+    },
+    orderVendorFulfillment: {
+      createMany: jest.fn(),
+    },
+    orderStatusAudit: {
+      createMany: jest.fn(),
+    },
+    user: {
+      findUnique: jest.fn(),
+    },
+    vendor: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
@@ -48,6 +63,8 @@ import { evaluateCheckoutEligibility } from "@/lib/checkout-eligibility";
 import { enqueueOutboxEvent } from "@/lib/outbox";
 import { prisma } from "@/lib/prisma";
 import handler from "@/pages/api/orders/create";
+
+const prismaMock = prisma as any;
 
 function createReqRes(input: Partial<NextApiRequest> = {}) {
   const req = {
@@ -91,6 +108,11 @@ describe("orders/create API", () => {
       paymentOptions: [{ code: "CARD" }],
       vendorCoverage: [],
     });
+    (prismaMock.notification.create as jest.Mock).mockResolvedValue({ id: "notif_1" });
+    (prismaMock.orderVendorFulfillment.createMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (prismaMock.orderStatusAudit.createMany as jest.Mock).mockResolvedValue({ count: 1 });
+    (prismaMock.user.findUnique as jest.Mock).mockResolvedValue(null);
+    (prismaMock.vendor.findMany as jest.Mock).mockResolvedValue([]);
   });
 
   it("returns 401 for unauthenticated users", async () => {

@@ -1111,10 +1111,10 @@ function shouldRunAuthSchemaGuard(req: NextApiRequest) {
 
 async function runAuthSchemaGuardBestEffort() {
   try {
-    // Avoid blocking auth routes indefinitely when DB is slow/unavailable.
+    // Keep auth responses fast even when DB is degraded.
     await Promise.race([
       ensureAuthSchemaCompatibility(),
-      new Promise<void>((resolve) => setTimeout(resolve, 2000)),
+      new Promise<void>((resolve) => setTimeout(resolve, 500)),
     ]);
   } catch (error) {
     logger.warn("[NextAuth] Auth schema guard skipped due to runtime failure", {

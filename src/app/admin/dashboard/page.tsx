@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import RoleAwareAssistant from "@/components/assistant/RoleAwareAssistant";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 
 type HealthResponse = {
@@ -782,6 +784,19 @@ export default function AdminDashboardPage() {
       <div className="mb-6">
         <h1 className="text-3xl font-bold">Admin Dashboard</h1>
         <p className="text-muted-foreground">Moderate product submissions and run one-click database write health checks.</p>
+        <div className="mt-2">
+          <Button asChild variant="outline" size="sm" className="touch-target">
+            <Link href="/admin/vendors">Manage Vendor Visibility</Link>
+          </Button>
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <RoleAwareAssistant
+          role="admin"
+          context="admin-dashboard"
+          pendingApprovals={pendingCount}
+        />
       </div>
 
       <div className="mb-6 grid gap-3 sm:grid-cols-3">

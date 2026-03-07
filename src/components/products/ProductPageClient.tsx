@@ -9,13 +9,16 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import RoleAwareAssistant from "@/components/assistant/RoleAwareAssistant";
 import { useCart } from "@/contexts/CartContext";
 import { useSession } from "next-auth/react";
+import { formatCurrency } from "@/lib/currency";
 
 interface Product {
   id: string;
   name: string;
   price: number;
+  currency: string;
   description: string;
   image: string;
   vendor: string;
@@ -32,6 +35,10 @@ export default function ProductPageClient({ product, relatedProducts }: ProductP
   const [quantity, setQuantity] = useState(1);
   const { addToCart } = useCart();
   const { data: session } = useSession();
+  const assistantRole =
+    session?.user?.role === "admin" || session?.user?.role === "vendor" || session?.user?.role === "user"
+      ? session.user.role
+      : "guest";
 
   const handleAddToCart = () => {
     addToCart(product.id, quantity);
@@ -97,9 +104,9 @@ export default function ProductPageClient({ product, relatedProducts }: ProductP
           <p className="mb-4 text-gray-600">{product.description}</p>
 
           <div className="mb-6">
-            <p className="text-3xl font-bold text-violet-600">${product.price.toFixed(2)}</p>
+            <p className="text-3xl font-bold text-violet-600">{formatCurrency(product.price, product.currency)}</p>
             <p className="text-sm text-gray-500">
-              Free shipping on orders over $50
+              Free shipping on orders over {formatCurrency(50, product.currency)}
             </p>
           </div>
 
@@ -119,6 +126,15 @@ export default function ProductPageClient({ product, relatedProducts }: ProductP
                 <span className="ml-1">Trusted Vendor</span>
               </div>
             </div>
+          </div>
+
+          <div className="mb-6">
+            <RoleAwareAssistant
+              role={assistantRole}
+              context="product"
+              productName={product.name}
+              vendorName={product.vendor}
+            />
           </div>
 
           {/* Purchase Options */}
@@ -357,7 +373,7 @@ export default function ProductPageClient({ product, relatedProducts }: ProductP
                 </div>
                 <div className="flex items-center justify-between">
                   <p className="font-bold text-violet-600">
-                    ${relatedProduct.price.toFixed(2)}
+                    {formatCurrency(relatedProduct.price, relatedProduct.currency)}
                   </p>
                   <Button asChild variant="outline" size="sm">
                     <Link href={`/products/${relatedProduct.id}`}>View</Link>

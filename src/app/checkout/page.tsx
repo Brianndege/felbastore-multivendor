@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import CheckoutForm from "@/components/checkout/CheckoutForm";
 import MpesaPaymentForm from "@/components/checkout/MpesaPaymentForm";
 import PaymentMethodSelector from "@/components/checkout/PaymentMethodSelector";
+import RoleAwareAssistant from "@/components/assistant/RoleAwareAssistant";
 import { toast } from "sonner";
 
 const stripePromise = getStripe();
@@ -443,6 +444,14 @@ export default function CheckoutPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-3xl font-bold mb-8">Checkout</h1>
+
+      <div className="mb-6">
+        <RoleAwareAssistant
+          role="user"
+          context="checkout"
+          blockedVendorNames={blockedVendors.map((vendor) => vendor.name)}
+        />
+      </div>
 
       <div className="grid gap-8 lg:grid-cols-3 lg:grid-flow-row-dense">
         {/* Left Column - Forms (spans 2 columns for desktop) */}

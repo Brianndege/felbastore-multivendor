@@ -133,7 +133,7 @@ function createBrowserReqRes(input: Partial<NextApiRequest> = {}) {
 describe("admin login bundle generation flow", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.NODE_ENV = "test";
+    (process.env as Record<string, string | undefined>).NODE_ENV = "test";
     process.env.ADMIN_DEFAULT_EMAIL = "ndegebrian4@gmail.com";
     process.env.ADMIN_LOGIN_KEY = "bootstrap-key";
     process.env.APP_URL = "https://felbastore.co.ke";

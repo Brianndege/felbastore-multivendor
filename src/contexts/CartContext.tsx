@@ -13,6 +13,7 @@ interface CartItem {
     id: string;
     name: string;
     price: number;
+    currency?: string;
     images: string;
     vendor: {
       name: string;

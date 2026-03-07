@@ -4,8 +4,59 @@ import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import { enforceCsrfOrigin } from "@/lib/csrf";
 import crypto from "crypto";
+import { Prisma } from "@prisma/client";
+import { z } from "zod";
 import { CheckoutValidationError, evaluateCheckoutEligibility } from "@/lib/checkout-eligibility";
 import { enqueueOutboxEvent } from "@/lib/outbox";
+import { formatCurrency } from "@/lib/currency";
+import { sendOrderCreatedEmailToUser, sendOrderCreatedEmailToVendor } from "@/lib/email";
+
+const VENDOR_CONFIRMATION_SLA_HOURS = 6;
+
+const AddressSchema = z.object({
+  address: z.string().optional(),
+  city: z.string().min(1),
+  country: z.string().min(1),
+  lat: z.union([z.number(), z.string()]).optional(),
+  lng: z.union([z.number(), z.string()]).optional(),
+});
+
+const CreateOrderBodySchema = z.object({
+  shippingAddress: AddressSchema,
+  billingAddress: AddressSchema,
+  paymentMethod: z.string().min(1),
+  selectedZoneIds: z.record(z.any()).optional(),
+});
+
+function logPrismaError(context: string, error: unknown, extra?: Record<string, unknown>) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientUnknownRequestError) {
+    console.error(`[${context}] Prisma error`, {
+      ...extra,
+      name: error.name,
+      message: error.message,
+      code: (error as Prisma.PrismaClientKnownRequestError).code,
+      meta: (error as Prisma.PrismaClientKnownRequestError).meta,
+      clientVersion: error.clientVersion,
+      stack: error.stack,
+    });
+    return;
+  }
+
+  if (error instanceof Error) {
+    console.error(`[${context}] Error`, {
+      ...extra,
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return;
+  }
+
+  console.error(`[${context}] Unknown error`, {
+    ...extra,
+    error,
+  });
+}
 
 function normalizePaymentMethodToCode(method: string): string {
   const normalized = method.toLowerCase();
@@ -17,6 +68,17 @@ function normalizePaymentMethodToCode(method: string): string {
   if (normalized === "wallet") return "WALLET";
 
   return "";
+}
+
+function toOptionalNumber(input: unknown): number | undefined {
+  if (typeof input === "number" && Number.isFinite(input)) {
+    return input;
+  }
+  if (typeof input === "string") {
+    const parsed = Number(input);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -33,7 +95,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   const userId = session.user.id;
-  const { shippingAddress, billingAddress, paymentMethod, selectedZoneIds } = req.body;
+  const parsedBody = CreateOrderBodySchema.safeParse(req.body);
+  if (!parsedBody.success) {
+    return res.status(400).json({
+      error: "Invalid request payload",
+      code: "INVALID_ORDER_PAYLOAD",
+      details: parsedBody.error.issues,
+    });
+  }
+
+  const { shippingAddress, billingAddress, paymentMethod, selectedZoneIds } = parsedBody.data;
   const normalizedPaymentMethod = typeof paymentMethod === "string" ? paymentMethod.toLowerCase() : "pending";
   const isPodOrder = normalizedPaymentMethod === "pod" || normalizedPaymentMethod === "pay_on_delivery";
 
@@ -47,8 +118,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       address: {
         city: shippingAddress?.city,
         country: shippingAddress?.country,
-        lat: shippingAddress?.lat,
-        lng: shippingAddress?.lng,
+        lat: toOptionalNumber(shippingAddress?.lat),
+        lng: toOptionalNumber(shippingAddress?.lng),
       },
       selectedZoneIds: typeof selectedZoneIds === "object" && selectedZoneIds !== null ? selectedZoneIds : undefined,
     });
@@ -97,12 +168,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(400).json({ error: "Cart is empty" });
     }
 
-    // Calculate totals
+    // Calculate totals and validate inventory before opening a transaction.
     let subtotal = 0;
     const orderItems = cartItems.map(item => {
       const price = typeof item.product.price === 'number'
         ? item.product.price
         : Number(item.product.price);
+      if (!Number.isFinite(price) || price < 0) {
+        throw new Error(`INVALID_PRODUCT_PRICE:${item.product.id}`);
+      }
+      if (!item.product.vendorId) {
+        throw new Error(`MISSING_PRODUCT_VENDOR:${item.product.id}`);
+      }
+      if (item.product.inventory < item.quantity) {
+        throw new Error(`INSUFFICIENT_INVENTORY:${item.product.id}`);
+      }
+
       subtotal += price * item.quantity;
 
       return {
@@ -115,44 +196,132 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       };
     });
 
-    const shippingAmount = 0; // Free shipping
-    const taxAmount = subtotal * 0.1; // 10% tax
+    const shippingAmount = 0;
+    const taxAmount = subtotal * 0.1;
     const totalAmount = subtotal + shippingAmount + taxAmount;
 
     // Generate unique order number
     const orderNumber = `ORD-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 
-    // Create order
-    const order = await prisma.order.create({
-      data: {
-        orderNumber,
-        userId,
-        totalAmount,
-        shippingAmount,
-        taxAmount,
-        discountAmount: 0,
-        paymentMethod: normalizedPaymentMethod,
-        paymentStatus: isPodOrder ? "approved" : "pending",
-        shippingAddress: JSON.stringify(shippingAddress),
-        billingAddress: JSON.stringify(billingAddress),
-        orderItems: {
-          create: orderItems
-        }
-      },
-      include: {
-        orderItems: {
-          include: {
-            product: true,
-            vendor: true
-          }
+    const decimalTotalAmount = new Prisma.Decimal(totalAmount.toFixed(2));
+    const decimalShippingAmount = new Prisma.Decimal(shippingAmount.toFixed(2));
+    const decimalTaxAmount = new Prisma.Decimal(taxAmount.toFixed(2));
+    const decimalDiscountAmount = new Prisma.Decimal(0);
+
+    const uniqueVendorIds = Array.from(new Set(orderItems.map((item) => item.vendorId)));
+    const primaryVendorId = uniqueVendorIds.length === 1 ? uniqueVendorIds[0] : null;
+
+    const now = new Date();
+    const confirmationDueAt = new Date(now.getTime() + VENDOR_CONFIRMATION_SLA_HOURS * 60 * 60 * 1000);
+
+    const order = await prisma.$transaction(async (tx) => {
+      for (const item of orderItems) {
+        const inventoryUpdated = await tx.product.updateMany({
+          where: {
+            id: item.productId,
+            inventory: { gte: item.quantity },
+          },
+          data: {
+            inventory: { decrement: item.quantity },
+            soldCount: { increment: item.quantity },
+          },
+        });
+
+        if (inventoryUpdated.count === 0) {
+          throw new Error(`INVENTORY_UPDATE_FAILED:${item.productId}`);
         }
       }
+
+      const createdOrder = await tx.order.create({
+        data: {
+          orderNumber,
+          userId,
+          customerId: userId,
+          vendorId: primaryVendorId,
+          totalAmount: decimalTotalAmount,
+          shippingAmount: decimalShippingAmount,
+          taxAmount: decimalTaxAmount,
+          discountAmount: decimalDiscountAmount,
+          paymentMethod: normalizedPaymentMethod,
+          paymentStatus: isPodOrder ? "approved" : "pending",
+          shippingAddress: JSON.stringify(shippingAddress),
+          billingAddress: JSON.stringify(billingAddress),
+          orderItems: {
+            create: orderItems,
+          },
+        },
+        include: {
+          orderItems: {
+            include: {
+              product: true,
+              vendor: true,
+            },
+          },
+        },
+      });
+
+      await tx.cartItem.deleteMany({
+        where: { userId },
+      });
+
+      await tx.orderVendorFulfillment.createMany({
+        data: uniqueVendorIds.map((vendorId) => ({
+          orderId: createdOrder.id,
+          vendorId,
+          orderStatus: "PENDING",
+          shippingStatus: "PENDING",
+          confirmationDueAt,
+        })),
+        skipDuplicates: true,
+      });
+
+      await tx.orderStatusAudit.createMany({
+        data: uniqueVendorIds.map((vendorId) => ({
+          orderId: createdOrder.id,
+          vendorId,
+          toStatus: "PENDING",
+          actorRole: "system",
+          actorId: userId,
+          note: "Order created and awaiting vendor acknowledgement",
+        })),
+      });
+
+      return createdOrder;
     });
 
-    // Clear cart after successful order creation
-    await prisma.cartItem.deleteMany({
-      where: { userId }
-    });
+    // Create in-app notifications for user and vendors.
+
+    const notificationWrites = [
+      prisma.notification.create({
+        data: {
+          userId,
+          type: "order",
+          title: "Order Placed - Waiting for Vendor Confirmation",
+          message: `Your order #${order.orderNumber} has been placed and is pending vendor confirmation.`,
+          data: JSON.stringify({ orderId: order.id, orderNumber: order.orderNumber }),
+        },
+      }),
+      ...uniqueVendorIds.map((vendorId) => {
+        const vendorLineItems = order.orderItems.filter((item) => item.vendorId === vendorId);
+        const lineItemCount = vendorLineItems.reduce((sum, item) => sum + item.quantity, 0);
+
+        return prisma.notification.create({
+          data: {
+            vendorId,
+            type: "order",
+            title: "New Pending Order",
+            message: `Order #${order.orderNumber} includes ${lineItemCount} item(s) for your store and needs confirmation.`,
+            data: JSON.stringify({
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              itemCount: lineItemCount,
+            }),
+          },
+        });
+      }),
+    ];
+
+    await Promise.all(notificationWrites);
 
     await enqueueOutboxEvent({
       topic: "order.created",
@@ -168,6 +337,39 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
 
+    const userRecord = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true, name: true },
+    });
+
+    if (userRecord?.email) {
+      await sendOrderCreatedEmailToUser({
+        email: userRecord.email,
+        customerName: userRecord.name || undefined,
+        orderNumber: order.orderNumber,
+        amountLabel: formatCurrency(Number(order.totalAmount), order.orderItems[0]?.product?.currency || "KES"),
+      });
+    }
+
+    const vendors = await prisma.vendor.findMany({
+      where: { id: { in: uniqueVendorIds } },
+      select: { id: true, email: true, storeName: true },
+    });
+
+    await Promise.all(
+      vendors.map((vendor) => {
+        const lineItems = order.orderItems.filter((item) => item.vendorId === vendor.id);
+        const itemSummary = lineItems.map((item) => `${item.quantity}x ${item.productName}`).join(", ");
+
+        return sendOrderCreatedEmailToVendor({
+          email: vendor.email,
+          storeName: vendor.storeName,
+          orderNumber: order.orderNumber,
+          itemSummary,
+        });
+      })
+    );
+
     return res.status(201).json({
       order,
       message: "Order created successfully"
@@ -181,7 +383,34 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       });
     }
 
-    console.error("Error creating order:", error);
+    const message = error instanceof Error ? error.message : "";
+    if (message.startsWith("INSUFFICIENT_INVENTORY:") || message.startsWith("INVENTORY_UPDATE_FAILED:")) {
+      return res.status(409).json({
+        error: "One or more items are out of stock",
+        code: "INSUFFICIENT_INVENTORY",
+      });
+    }
+
+    if (message.startsWith("MISSING_PRODUCT_VENDOR:")) {
+      return res.status(400).json({
+        error: "Cart contains products without a vendor reference",
+        code: "INVALID_CART_PRODUCT_VENDOR",
+      });
+    }
+
+    if (message.startsWith("INVALID_PRODUCT_PRICE:")) {
+      return res.status(400).json({
+        error: "Cart contains products with invalid pricing",
+        code: "INVALID_CART_PRODUCT_PRICE",
+      });
+    }
+
+    logPrismaError("orders/create", error, {
+      userId,
+      paymentMethod: normalizedPaymentMethod,
+      hasShippingAddress: Boolean(shippingAddress),
+      hasBillingAddress: Boolean(billingAddress),
+    });
     return res.status(500).json({ error: "Internal server error" });
   }
 }

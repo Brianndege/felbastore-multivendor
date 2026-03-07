@@ -3,6 +3,11 @@ import { logger } from '@/lib/logger';
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient | undefined };
 
+function looksLikePooledConnection(url: string): boolean {
+  const normalized = url.toLowerCase();
+  return normalized.includes("pooler") || normalized.includes("pgbouncer") || normalized.includes("connection_limit=");
+}
+
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
@@ -12,17 +17,13 @@ export const prisma =
     errorFormat: 'pretty',
   });
 
-// Test connection on initialization
 if (!globalForPrisma.prisma) {
-  logger.info('[Prisma] Initializing Prisma Client...');
-  prisma.$connect()
-    .then(() => {
-      logger.info('[Prisma] Database connection established successfully');
-    })
-    .catch((error) => {
-      logger.error('[Prisma] Failed to connect to database:', error);
-      logger.error('[Prisma] Please check your DATABASE_URL in .env file');
-    });
+  logger.info('[Prisma] Client initialized (lazy connection mode)');
+
+  const databaseUrl = process.env.DATABASE_URL || '';
+  if (process.env.NODE_ENV === 'production' && databaseUrl && !looksLikePooledConnection(databaseUrl)) {
+    logger.warn("[Prisma] DATABASE_URL may not be using a pooled endpoint. Consider Neon's pooler/PgBouncer to reduce 500/499 spikes under load.");
+  }
 }
 
 if (process.env.NODE_ENV !== 'production') {

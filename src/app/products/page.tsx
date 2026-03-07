@@ -15,6 +15,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { formatCurrency } from "@/lib/currency";
 
 type FeedProduct = {
   id: string;
@@ -24,6 +25,7 @@ type FeedProduct = {
   description: string;
   image: string;
   price: number;
+  currency: string;
   category: string;
   vendorLabel: string;
   rating?: number;
@@ -292,7 +294,7 @@ export default function ProductsPage() {
                   <h3 className="mb-1 line-clamp-1 font-medium">{product.name}</h3>
                   <p className="mb-3 line-clamp-2 text-xs text-gray-500">{product.description}</p>
                   <div className="flex items-center justify-between">
-                    <p className="font-bold text-violet-600">${product.price.toFixed(2)}</p>
+                    <p className="font-bold text-violet-600">{formatCurrency(product.price, product.currency)}</p>
                     <span className="text-xs text-gray-500">by {product.vendorLabel}</span>
                   </div>
                   {product.productType === "affiliate" && (

@@ -3,8 +3,88 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/pages/api/auth/[...nextauth]";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 
 const prismaUnsafe = prisma as any;
+
+function logPrismaError(context: string, error: unknown, extra?: Record<string, unknown>) {
+  if (error instanceof Prisma.PrismaClientKnownRequestError || error instanceof Prisma.PrismaClientUnknownRequestError) {
+    console.error(`[${context}] Prisma error`, {
+      ...extra,
+      name: error.name,
+      message: error.message,
+      code: (error as Prisma.PrismaClientKnownRequestError).code,
+      meta: (error as Prisma.PrismaClientKnownRequestError).meta,
+      clientVersion: error.clientVersion,
+      stack: error.stack,
+    });
+    return;
+  }
+
+  if (error instanceof Error) {
+    console.error(`[${context}] Error`, {
+      ...extra,
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    });
+    return;
+  }
+
+  console.error(`[${context}] Unknown error`, {
+    ...extra,
+    error,
+  });
+}
+
+async function fetchOrdersWithFallback(vendorId: string) {
+  try {
+    return await prismaUnsafe.order.findMany({
+      where: {
+        orderItems: {
+          some: {
+            vendorId,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        orderItems: {
+          include: {
+            product: {
+              select: {
+                currency: true,
+              },
+            },
+          },
+        },
+        vendorFulfillments: {
+          where: { vendorId },
+          take: 1,
+        },
+      },
+      take: 100,
+    });
+  } catch (error) {
+    logPrismaError("vendor/orders/findMany-primary", error, { vendorId });
+
+    // Fallback query is resilient to relation/include drift in partially migrated environments.
+    return prismaUnsafe.order.findMany({
+      where: {
+        orderItems: {
+          some: {
+            vendorId,
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        orderItems: true,
+      },
+      take: 100,
+    });
+  }
+}
 
 type VendorOrderSummary = {
   id: string;
@@ -85,32 +165,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   const requestedStatus = typeof req.query.status === "string" ? req.query.status.trim().toLowerCase() : "";
 
   try {
-    const orders = await prismaUnsafe.order.findMany({
-      where: {
-        orderItems: {
-          some: {
-            vendorId,
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-      include: {
-        orderItems: {
-          include: {
-            product: {
-              select: {
-                currency: true,
-              },
-            },
-          },
-        },
-        vendorFulfillments: {
-          where: { vendorId },
-          take: 1,
-        },
-      },
-      take: 100,
-    });
+    const orders = await fetchOrdersWithFallback(vendorId);
 
     const collectedUserIds: string[] = [];
     for (const order of orders) {
@@ -147,7 +202,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const canUpdateStatus = Array.isArray(order.orderItems)
           ? order.orderItems.every((item: any) => item?.vendorId === vendorId)
           : false;
-        const fulfillment = order.vendorFulfillments?.[0];
+        const fulfillment = Array.isArray(order.vendorFulfillments) ? order.vendorFulfillments[0] : undefined;
 
         const status = normalizeLifecycleStatus(fulfillment?.orderStatus, normalizeLifecycleStatus(order.status, "pending"));
         const shippingStatus = normalizeLifecycleStatus(
@@ -192,10 +247,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         payload.push(parsed.data);
       } catch (rowError) {
         skippedOrders += 1;
-        console.error("Error shaping vendor order row:", {
+        logPrismaError("vendor/orders/shape-row", rowError, {
           orderId: order?.id,
           vendorId,
-          reason: rowError instanceof Error ? rowError.message : "unknown_row_error",
         });
       }
     }
@@ -212,10 +266,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       },
     });
   } catch (error) {
-    console.error("Error fetching vendor orders:", {
+    logPrismaError("vendor/orders", error, {
       vendorId,
       requestedStatus,
-      reason: error instanceof Error ? error.message : "unknown_vendor_orders_error",
     });
     return res.status(500).json({
       error: "Failed to fetch vendor orders",

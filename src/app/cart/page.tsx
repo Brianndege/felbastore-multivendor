@@ -4,6 +4,7 @@ import { useSession } from "next-auth/react";
 import { useCart } from "@/contexts/CartContext";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { formatCurrency, normalizeCurrencyCode } from "@/lib/currency";
 
 function getProductImage(images: unknown): string {
   if (Array.isArray(images)) {
@@ -48,6 +49,8 @@ export default function CartPage() {
 
   const cartCount = getCartCount();
   const cartTotal = getCartTotal();
+  const uniqueCurrencies = Array.from(new Set(items.map((item) => normalizeCurrencyCode(item.product?.currency || "KES"))));
+  const singleCurrency = uniqueCurrencies.length === 1 ? uniqueCurrencies[0] : null;
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -75,7 +78,7 @@ export default function CartPage() {
               <div className="flex-1">
                 <h3 className="font-semibold">{item.product?.name || "Product unavailable"}</h3>
                 <div className="text-xs text-gray-500">by {item.product?.vendor?.storeName || item.product?.vendor?.name || "Unknown vendor"}</div>
-                <div className="font-medium text-violet-600 mt-1">${Number(item.product?.price || 0).toFixed(2)}</div>
+                <div className="font-medium text-violet-600 mt-1">{formatCurrency(Number(item.product?.price || 0), item.product?.currency || "KES")}</div>
               </div>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => updateQuantity(item.id, Math.max(1, item.quantity - 1))} disabled={item.quantity <= 1}>-</Button>
@@ -87,7 +90,12 @@ export default function CartPage() {
           ))}
           <div className="mt-8 flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-t pt-6">
             <div>
-              <p className="text-xl font-semibold">Total: <span className="text-violet-600">${cartTotal.toFixed(2)}</span></p>
+              <p className="text-xl font-semibold">
+                Total:{" "}
+                <span className="text-violet-600">
+                  {singleCurrency ? formatCurrency(cartTotal, singleCurrency) : `Mixed currencies (${uniqueCurrencies.join(", ")})`}
+                </span>
+              </p>
             </div>
             <div className="flex gap-2">
               <Button asChild variant="outline">
