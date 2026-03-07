@@ -115,6 +115,21 @@ export default function OtpLoginPage() {
           return;
         }
 
+        if (result.error === "OTP_RATE_LIMITED") {
+          toast.error("Too many verification attempts. Please wait and try again.");
+          return;
+        }
+
+        if (result.error === "OTP_CHALLENGE_MISMATCH") {
+          toast.error("This code is no longer valid for the current session. Request a new code.");
+          return;
+        }
+
+        if (result.error === "OTP_ACCOUNT_NOT_FOUND") {
+          toast.error("No matching account was found for this code. Request a new code.");
+          return;
+        }
+
         toast.error("Invalid or expired code. Request a new code and try again.");
         return;
       }

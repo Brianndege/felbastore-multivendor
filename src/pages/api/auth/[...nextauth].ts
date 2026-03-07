@@ -559,7 +559,7 @@ export const authOptions: NextAuthOptions = {
             userAgent,
             metadata: { reason: "rate_limited" },
           });
-          throw new Error("INVALID_OTP");
+          throw new Error("OTP_RATE_LIMITED");
         }
 
         const otpResult = await verifyOtpChallenge({
@@ -589,12 +589,12 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (!otpResult.challenge || otpResult.challenge.email !== normalizedEmail || otpResult.challenge.userType !== credentials.userType) {
-          throw new Error("INVALID_OTP");
+          throw new Error("OTP_CHALLENGE_MISMATCH");
         }
 
         const account = await findAccountByEmail(credentials.userType as "user" | "vendor", normalizedEmail);
         if (!account) {
-          throw new Error("INVALID_OTP");
+          throw new Error("OTP_ACCOUNT_NOT_FOUND");
         }
 
         if (!account.emailVerified) {
